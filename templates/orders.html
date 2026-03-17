@@ -1,0 +1,177 @@
+{% extends "layout.html" %}
+{% block title %}Orders · DashForge{% endblock %}
+
+{% block content %}
+<header class="page-header">
+  <div class="page-header__left">
+    <h1 class="page-title">Customer Orders</h1>
+    <p class="page-subtitle" id="orderCountLabel">Loading…</p>
+  </div>
+  <div class="page-header__right">
+    <button class="btn btn-primary" id="newOrderBtn">
+      <svg class="icon-xs" viewBox="0 0 16 16"><path d="M8 2v12M2 8h12" stroke-width="2"/></svg>
+      New Order
+    </button>
+  </div>
+</header>
+
+<!-- Toolbar -->
+<div class="toolbar">
+  <div class="search-box">
+    <svg class="icon-xs" viewBox="0 0 16 16"><circle cx="7" cy="7" r="5"/><path d="M12 12l3 3"/></svg>
+    <input type="text" id="searchInput" class="search-input" placeholder="Search orders…">
+  </div>
+  <select id="statusFilter" class="select-sm">
+    <option value="">All Status</option>
+    <option>Pending</option>
+    <option>In progress</option>
+    <option>Completed</option>
+  </select>
+</div>
+
+<!-- Table -->
+<div class="table-card">
+  <table class="data-table" id="ordersTable">
+    <thead>
+      <tr>
+        <th>#</th><th>Customer</th><th>Email</th><th>Product</th>
+        <th>Qty</th><th>Unit Price</th><th>Total</th>
+        <th>Status</th><th>Created By</th><th>Date</th><th>Actions</th>
+      </tr>
+    </thead>
+    <tbody id="ordersBody">
+      <tr><td colspan="11" class="td-empty">Loading…</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- ══════════════════ ORDER MODAL ══════════════════════════════ -->
+<div class="overlay" id="orderOverlay" hidden>
+  <div class="modal" id="orderModal">
+
+    <div class="modal__header">
+      <h2 class="modal__title" id="modalTitle">New Order</h2>
+      <button class="btn-icon" id="closeModalBtn">
+        <svg viewBox="0 0 16 16"><path d="M12 4L4 12M4 4l8 8" stroke-width="1.8"/></svg>
+      </button>
+    </div>
+
+    <div class="modal__body">
+      <form id="orderForm" novalidate autocomplete="off">
+        <input type="hidden" id="fOrderId">
+
+        <!-- Customer Info -->
+        <div class="form-section">Customer Information</div>
+        <div class="form-row cols-2">
+          <div class="form-field">
+            <label>First Name <span class="req">*</span></label>
+            <input type="text" id="fFirstName" placeholder="Alice">
+            <span class="field-err"></span>
+          </div>
+          <div class="form-field">
+            <label>Last Name <span class="req">*</span></label>
+            <input type="text" id="fLastName" placeholder="Johnson">
+            <span class="field-err"></span>
+          </div>
+          <div class="form-field">
+            <label>Email <span class="req">*</span></label>
+            <input type="email" id="fEmail" placeholder="alice@example.com">
+            <span class="field-err"></span>
+          </div>
+          <div class="form-field">
+            <label>Phone <span class="req">*</span></label>
+            <input type="tel" id="fPhone" placeholder="+1 555-0100">
+            <span class="field-err"></span>
+          </div>
+        </div>
+        <div class="form-field">
+          <label>Street Address</label>
+          <input type="text" id="fStreet" placeholder="123 Main Street">
+        </div>
+        <div class="form-row cols-3">
+          <div class="form-field">
+            <label>City</label>
+            <input type="text" id="fCity">
+          </div>
+          <div class="form-field">
+            <label>State / Province</label>
+            <input type="text" id="fState">
+          </div>
+          <div class="form-field">
+            <label>Postal Code</label>
+            <input type="text" id="fPostal">
+          </div>
+        </div>
+        <div class="form-field">
+          <label>Country</label>
+          <select id="fCountry">
+            <option value="">— Select Country —</option>
+            <option>United States</option>
+            <option>Canada</option>
+            <option>Australia</option>
+            <option>Singapore</option>
+            <option>Hong Kong</option>
+          </select>
+        </div>
+
+        <!-- Order Info -->
+        <div class="form-section">Order Information</div>
+        <div class="form-field">
+          <label>Product</label>
+          <select id="fProduct">
+            <option value="">— Select Product —</option>
+            <option>Fiber Internet 300 Mbps</option>
+            <option>5G Unlimited Mobile Plan</option>
+            <option>Fiber Internet 1 Gbps</option>
+            <option>Business Internet 500 Mbps</option>
+            <option>VoIP Corporate Package</option>
+          </select>
+        </div>
+        <div class="form-row cols-3">
+          <div class="form-field">
+            <label>Quantity</label>
+            <input type="number" id="fQty" min="1" value="1">
+          </div>
+          <div class="form-field">
+            <label>Unit Price ($)</label>
+            <input type="number" id="fUnitPrice" min="0" step="0.01" placeholder="0.00">
+          </div>
+          <div class="form-field">
+            <label>Total Amount ($)</label>
+            <input type="text" id="fTotal" readonly class="readonly-field">
+          </div>
+        </div>
+        <div class="form-row cols-2">
+          <div class="form-field">
+            <label>Status</label>
+            <select id="fStatus">
+              <option>Pending</option>
+              <option>In progress</option>
+              <option>Completed</option>
+            </select>
+          </div>
+          <div class="form-field">
+            <label>Created By</label>
+            <select id="fCreatedBy">
+              <option>Mr. Michael Harris</option>
+              <option>Mr. Ryan Cooper</option>
+              <option>Ms. Olivia Carter</option>
+              <option>Mr. Lucas Martin</option>
+            </select>
+          </div>
+        </div>
+      </form>
+    </div><!-- /modal__body -->
+
+    <div class="modal__footer">
+      <button class="btn btn-ghost" id="cancelModalBtn">Cancel</button>
+      <button class="btn btn-primary" id="saveOrderBtn">Save Order</button>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/orders.js') }}"></script>
+{% endblock %}

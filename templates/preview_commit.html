@@ -1,0 +1,154 @@
+{% extends "layout.html" %}
+{% block title %}Commit Preview · DashForge{% endblock %}
+
+{% block content %}
+<!-- Preview banner -->
+<div class="preview-banner" id="previewBanner">
+  <div class="preview-banner__left">
+    <div class="preview-banner__icon">🕐</div>
+    <div>
+      <div class="preview-banner__title" id="previewTitle">Loading commit…</div>
+      <div class="preview-banner__meta" id="previewMeta"></div>
+    </div>
+  </div>
+  <div class="preview-banner__actions">
+    <button class="btn btn-ghost" onclick="history.back()">← Back</button>
+    <button class="btn btn-danger" id="restoreBtn" style="display:none">
+      <svg class="icon-xs" viewBox="0 0 16 16"><path d="M1 4c0 0 2-3 7-3a8 8 0 1 1-8 8" stroke-width="1.6"/><polyline points="1,1 1,5 5,5" stroke-width="1.6"/></svg>
+      Restore This Layout
+    </button>
+    <a href="{{ url_for('configure') }}" class="btn btn-primary">Open Configure</a>
+  </div>
+</div>
+
+<div class="page-header" style="margin-bottom:16px">
+  <div>
+    <h1 class="page-title">Commit Preview</h1>
+    <p class="page-subtitle">Read-only snapshot — no changes can be made here</p>
+  </div>
+</div>
+
+<!-- Filters bar (read-only, just for visual context) -->
+<div class="filters-bar" id="filtersBar">
+  <label>Advanced Filters:</label>
+  <span style="color:var(--tx3);font-size:.82rem">Loading…</span>
+</div>
+
+<!-- Read-only grid -->
+<div class="grid-wrapper">
+  <div class="grid-stack" id="previewGrid"></div>
+</div>
+
+<!-- Restore confirm dialog built into overlay already in layout -->
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/widgets.js') }}"></script>
+<script>
+(async () => {
+  const hid = {{ hid }};
+  let dashboardId = null;
+
+  /* ── Load commit data ─────────────────────────────────────── */
+  let commitData;
+  try {
+    const res = await fetch(`/api/history/${hid}/preview`);
+    if (!res.ok) throw new Error('Not found');
+    commitData = await res.json();
+  } catch {
+    document.getElementById('previewTitle').textContent = 'Commit not found';
+    document.getElementById('previewBanner').style.borderColor = 'var(--danger)';
+    return;
+  }
+
+  dashboardId = commitData.dashboard_id;
+
+  /* ── Update banner ────────────────────────────────────────── */
+  document.getElementById('previewTitle').textContent = `"${commitData.commit_msg}"`;
+  document.getElementById('previewMeta').textContent =
+    `Dashboard: ${commitData.dashboard_name}  ·  Committed: ${new Date(commitData.committed_at).toLocaleString('en-US',{year:'numeric',month:'short',day:'numeric',hour:'2-digit',minute:'2-digit',second:'2-digit'})}`;
+  document.title = `Preview: ${commitData.commit_msg} · DashForge`;
+
+  /* ── Show restore button ─────────────────────────────────── */
+  const restoreBtn = document.getElementById('restoreBtn');
+  restoreBtn.style.display = 'inline-flex';
+  restoreBtn.addEventListener('click', async () => {
+    const ok = await confirmDialog(
+      `Restore dashboard "${commitData.dashboard_name}" to this commit?\n\nThis will UPDATE the current saved dashboard layout — but you can review it in Configure before making further changes.`
+    );
+    if (!ok) return;
+    try {
+      const res  = await fetch(`/api/history/${hid}/restore`, {method:'POST'});
+      const data = await res.json();
+      if (data.success) {
+        showToast('Layout restored ✓ — open Configure to review and edit', 'success');
+        setTimeout(() => { window.location.href = '/configure'; }, 2000);
+      } else { showToast('Restore failed', 'error'); }
+    } catch { showToast('Network error', 'error'); }
+  });
+
+  /* ── Build read-only grid ─────────────────────────────────── */
+  const layout = Array.isArray(commitData.layout) ? commitData.layout : [];
+  window._widgetRegistry = {};
+  layout.forEach(w => { window._widgetRegistry[w.id] = w; });
+
+  const grid = GridStack.init({
+    column:12, cellHeight:62, staticGrid:true, disableDrag:true, disableResize:true,
+  }, '#previewGrid');
+
+  layout.forEach(w => {
+    const el = document.createElement('div');
+    el.className = 'grid-stack-item';
+    el.setAttribute('gs-x', w.x??0); el.setAttribute('gs-y', w.y??0);
+    el.setAttribute('gs-w', w.w??4);  el.setAttribute('gs-h', w.h??3);
+    el.setAttribute('gs-id', w.id);
+    const inner = document.createElement('div');
+    inner.className = 'grid-stack-item-content';
+    inner.innerHTML = Widgets.buildShell(w, false); // editable=false
+    el.appendChild(inner);
+    grid.addWidget(el);
+    Widgets.renderWidget(w, 'all');
+  });
+
+  /* ── Dimension observer ──────────────────────────────────── */
+  if (window.ResizeObserver) {
+    const ro = new ResizeObserver(entries => {
+      entries.forEach(entry => {
+        const el = entry.target.closest('.grid-stack-item');
+        if (!el) return;
+        const {width:ww, height:hh} = entry.contentRect;
+        el.setAttribute('data-orient', ww/(hh||1) > 1.8 ? 'h' : ww/(hh||1) < 0.8 ? 'v' : 's');
+      });
+    });
+    document.querySelectorAll('.grid-stack-item-content').forEach(el => ro.observe(el));
+  }
+
+  /* ── Load filter options ──────────────────────────────────── */
+  try {
+    const opts = await (await fetch('/api/filter-options')).json();
+    const bar  = document.getElementById('filtersBar');
+    const fields = [{key:'product',label:'Product'},{key:'status',label:'Status'},{key:'created_by',label:'Created By'},{key:'country',label:'Country'}];
+    bar.innerHTML = '<label>Filters:</label>' + fields.map(f=>`
+      <select data-filter="${f.key}" title="${f.label}">
+        <option value="">All ${f.label}</option>
+        ${(opts[f.key]||[]).map(v=>`<option>${v}</option>`).join('')}
+      </select>`).join('') + `<button class="filter-reset" id="filterResetBtn">✕ Reset</button>`;
+    bar.querySelectorAll('select').forEach(sel => {
+      sel.addEventListener('change', () => {
+        window._globalFilters[`filter_${sel.dataset.filter}`] = sel.value;
+        layout.forEach(w => Widgets.renderWidget(w, 'all'));
+      });
+    });
+    document.getElementById('filterResetBtn')?.addEventListener('click', () => {
+      window._globalFilters = {};
+      bar.querySelectorAll('select').forEach(s => s.value='');
+      layout.forEach(w => Widgets.renderWidget(w, 'all'));
+    });
+  } catch {}
+
+  /* ── Theme sync ───────────────────────────────────────────── */
+  const t = localStorage.getItem('dashforge-theme') || 'dark';
+  document.documentElement.setAttribute('data-theme', t);
+})();
+</script>
+{% endblock %}

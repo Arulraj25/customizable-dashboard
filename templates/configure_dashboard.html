@@ -1,0 +1,226 @@
+{% extends "layout.html" %}
+{% block title %}Configure · DashForge{% endblock %}
+
+{% block content %}
+<header class="page-header">
+  <div class="page-header__left">
+    <h1 class="page-title">Configure Dashboard</h1>
+    <p class="page-subtitle" id="currentDashLabel" data-name="" data-id="">No dashboard selected</p>
+  </div>
+  <div class="page-header__right">
+    <button class="theme-toggle" id="themeToggleBtn">
+      <svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="4"/><path d="M8 1v1.5M8 13.5V15M1 8h1.5M13.5 8H15M3.05 3.05l1.06 1.06M11.89 11.89l1.06 1.06M3.05 12.95l1.06-1.06M11.89 4.11l1.06-1.06"/></svg>
+      <span class="theme-toggle-label"></span>
+    </button>
+    <button class="btn-history" id="historyBtn" style="display:none">
+      <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="8" cy="8" r="6.5"/><path d="M8 4.5V8l2.5 2"/></svg>
+      History
+      <span class="history-badge" id="historyBadge">0</span>
+    </button>
+    <button class="btn btn-ghost" id="clearAllBtn">Clear</button>
+    <button class="btn btn-primary" id="saveLayoutBtn">
+      <svg class="icon-xs" viewBox="0 0 16 16"><path d="M13 13H3a1 1 0 0 1-1-1V4l3-3h8a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1z"/><path d="M11 13V9H5v4M5 1v4h5"/></svg>
+      Save Dashboard
+    </button>
+  </div>
+</header>
+
+<!-- ── Dashboard Tabs ── -->
+<div class="dash-tabs-bar" id="dashTabsBar">
+  <span style="color:var(--tx3);font-size:.82rem;padding:6px">Loading dashboards…</span>
+</div>
+
+<div class="builder-layout">
+  <!-- Palette -->
+  <aside class="palette">
+    <div class="palette-header">Widgets</div>
+    <div class="palette-section">
+      <div class="palette-section-title">Charts</div>
+      <div class="palette-item" draggable="true" data-type="bar">
+        <span class="palette-item__icon"><svg viewBox="0 0 18 18"><rect x="1" y="9" width="4" height="8" rx="1"/><rect x="7" y="5" width="4" height="12" rx="1"/><rect x="13" y="2" width="4" height="15" rx="1"/></svg></span>
+        <span>Bar Chart</span>
+      </div>
+      <div class="palette-item" draggable="true" data-type="line">
+        <span class="palette-item__icon"><svg viewBox="0 0 18 18"><polyline points="1,14 5,8 9,11 13,5 17,8" stroke-width="1.8"/></svg></span>
+        <span>Line Chart</span>
+      </div>
+      <div class="palette-item" draggable="true" data-type="pie">
+        <span class="palette-item__icon"><svg viewBox="0 0 18 18"><path d="M9 9V2a7 7 0 1 0 7 7z"/><path d="M9 9H2a7 7 0 0 0 7 7z" opacity=".6"/></svg></span>
+        <span>Pie Chart</span>
+      </div>
+      <div class="palette-item" draggable="true" data-type="area">
+        <span class="palette-item__icon"><svg viewBox="0 0 18 18"><polyline points="1,14 5,8 9,11 13,5 17,7"/><path d="M1,14 L5,8 L9,11 L13,5 L17,7 L17,16 L1,16 Z" opacity=".25"/></svg></span>
+        <span>Area Chart</span>
+      </div>
+      <div class="palette-item" draggable="true" data-type="scatter">
+        <span class="palette-item__icon"><svg viewBox="0 0 18 18"><circle cx="4" cy="12" r="1.8"/><circle cx="10" cy="6" r="1.8"/><circle cx="14" cy="10" r="1.8"/><circle cx="7" cy="14" r="1.8"/><circle cx="13" cy="3" r="1.8"/></svg></span>
+        <span>Scatter</span>
+      </div>
+    </div>
+    <div class="palette-section">
+      <div class="palette-section-title">Tables</div>
+      <div class="palette-item" draggable="true" data-type="table">
+        <span class="palette-item__icon"><svg viewBox="0 0 18 18"><rect x="1" y="1" width="16" height="16" rx="2"/><path d="M1 6h16M1 11h16M6 1v16"/></svg></span>
+        <span>Table</span>
+      </div>
+    </div>
+    <div class="palette-section">
+      <div class="palette-section-title">KPIs</div>
+      <div class="palette-item" draggable="true" data-type="kpi">
+        <span class="palette-item__icon"><svg viewBox="0 0 18 18"><path d="M9 2l2.4 4.9 5.4.8-3.9 3.8.9 5.4L9 14.3l-4.8 2.6.9-5.4L1.2 7.7l5.4-.8z"/></svg></span>
+        <span>KPI Value</span>
+      </div>
+    </div>
+  </aside>
+
+  <!-- Canvas -->
+  <section class="canvas">
+    <div class="canvas-inner" id="canvasInner">
+      <div class="grid-stack" id="configGrid"></div>
+      <div class="canvas-hint" id="canvasHint">
+        <svg width="34" height="34" viewBox="0 0 34 34" fill="none" opacity=".4">
+          <path d="M17 5v24M5 17h24" stroke="var(--accent)" stroke-width="2"/>
+        </svg>
+        <span>Drag widgets here</span>
+      </div>
+    </div>
+  </section>
+</div>
+
+<!-- ── Widget Settings panel ── -->
+<div class="settings-panel" id="settingsPanel" hidden>
+  <div class="settings-panel__header">
+    <h3 id="settingsPanelTitle">Widget Settings</h3>
+    <button class="btn-icon" id="closePanelBtn"><svg viewBox="0 0 14 14"><path d="M11 3L3 11M3 3l8 8" stroke-width="1.8"/></svg></button>
+  </div>
+  <div class="settings-panel__body" id="settingsPanelBody"></div>
+  <div class="settings-panel__footer">
+    <button class="btn btn-primary w100" id="applySettingsBtn">Apply Settings</button>
+  </div>
+</div>
+<div class="panel-backdrop" id="panelBackdrop" hidden></div>
+
+<!-- ── History Panel ── -->
+<div class="history-panel" id="historyPanel" hidden>
+  <div class="history-panel__header">
+    <div>
+      <div class="history-panel__title">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="8" cy="8" r="6.5"/><path d="M8 4.5V8l2.5 2"/></svg>
+        Commit History
+      </div>
+      <div class="history-dash-name" id="historyDashName"></div>
+    </div>
+    <button class="btn-icon" id="closeHistoryBtn"><svg viewBox="0 0 14 14"><path d="M11 3L3 11M3 3l8 8" stroke-width="1.8"/></svg></button>
+  </div>
+  <div class="history-panel__body" id="historyBody">
+    <div class="history-empty"><p>No commits yet.</p></div>
+  </div>
+  <div class="history-panel__footer">
+    <button class="btn btn-primary w100" id="newCommitBtn">
+      <svg class="icon-xs" viewBox="0 0 16 16" stroke-linecap="round"><circle cx="8" cy="8" r="3"/><path d="M1 8h4M11 8h4"/></svg>
+      Save New Commit
+    </button>
+  </div>
+</div>
+<div class="panel-backdrop" id="historyBackdrop" hidden></div>
+
+<!-- ── SAVE DASHBOARD MODAL (always includes commit message) ── -->
+<div class="overlay" id="saveOverlay" hidden>
+  <div class="save-dialog">
+    <h3>
+      <svg class="icon-xs" viewBox="0 0 16 16"><path d="M13 13H3a1 1 0 0 1-1-1V4l3-3h8a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1z"/><path d="M11 13V9H5v4M5 1v4h5"/></svg>
+      Save Dashboard
+    </h3>
+
+    <div class="form-field" style="margin-top:4px">
+      <label>Dashboard Name <span class="req">*</span></label>
+      <input type="text" id="saveName" placeholder="e.g. Sales Overview Q1" maxlength="120">
+      <span class="field-err" id="saveNameErr"></span>
+    </div>
+
+    <!-- ★ Commit message — ALWAYS shown, required on overwrite -->
+    <div class="commit-msg-section">
+      <div class="commit-label">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="8" cy="8" r="3"/><path d="M1 8h4M11 8h4"/></svg>
+        Commit Message <span class="req" id="commitReq">*</span>
+      </div>
+      <input type="text" id="saveCommitMsg" placeholder="Describe your changes…" maxlength="255">
+      <span class="field-err" id="commitMsgErr"></span>
+      <div class="commit-hint">Every save is recorded in commit history so you can preview & restore it later.</div>
+    </div>
+
+    <div class="form-field" id="overwriteRow" style="display:none;margin-top:10px">
+      <label class="check-row">
+        <input type="checkbox" id="overwriteCheck" checked>
+        Overwrite existing save (uncheck to create new)
+      </label>
+    </div>
+
+    <div class="save-actions" style="margin-top:16px">
+      <button class="btn btn-ghost" id="cancelSaveBtn">Cancel</button>
+      <button class="btn btn-primary" id="confirmSaveBtn">
+        <svg class="icon-xs" viewBox="0 0 16 16" stroke-linecap="round"><circle cx="8" cy="8" r="3"/><path d="M1 8h4M11 8h4"/></svg>
+        Save & Commit
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Inline commit modal (from History "Save New Commit") ── -->
+<div class="overlay" id="commitOverlay" hidden>
+  <div class="save-dialog">
+    <h3>
+      <svg class="icon-xs" viewBox="0 0 16 16" stroke-linecap="round"><circle cx="8" cy="8" r="3"/><path d="M1 8h4M11 8h4"/></svg>
+      New Commit
+    </h3>
+    <p style="font-size:.82rem;color:var(--tx3);margin:4px 0 14px;line-height:1.5">
+      Snapshot the current canvas layout. You can preview and restore it later.
+    </p>
+    <div class="form-field">
+      <label>Commit Message <span class="req">*</span></label>
+      <input type="text" id="commitMsgInput" placeholder="e.g. Added revenue chart, removed scatter" maxlength="255">
+      <span class="field-err" id="commitMsgErr2"></span>
+    </div>
+    <div class="save-actions" style="margin-top:6px">
+      <button class="btn btn-ghost" id="cancelCommitBtn">Cancel</button>
+      <button class="btn btn-primary" id="confirmCommitBtn">
+        <svg class="icon-xs" viewBox="0 0 16 16" stroke-linecap="round"><circle cx="8" cy="8" r="3"/><path d="M1 8h4M11 8h4"/></svg>
+        Commit
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- ── New dashboard name modal ── -->
+<div class="overlay" id="newDashOverlay" hidden>
+  <div class="save-dialog" style="width:380px">
+    <h3>
+      <svg class="icon-xs" viewBox="0 0 16 16"><path d="M8 2v12M2 8h12" stroke-width="2"/></svg>
+      New Dashboard
+    </h3>
+    <div class="form-field" style="margin-top:8px">
+      <label>Dashboard Name <span class="req">*</span></label>
+      <input type="text" id="newDashName" placeholder="e.g. Marketing Overview" maxlength="120">
+      <span class="field-err" id="newDashErr"></span>
+    </div>
+    <div class="save-actions">
+      <button class="btn btn-ghost" id="cancelNewDashBtn">Cancel</button>
+      <button class="btn btn-primary" id="confirmNewDashBtn">Create</button>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/widgets.js') }}"></script>
+<script src="{{ url_for('static', filename='js/configure.js') }}"></script>
+<script>
+  const _t = localStorage.getItem('dashforge-theme') || 'dark';
+  document.querySelector('.theme-toggle-label').textContent = _t === 'dark' ? '☀ Light' : '🌙 Dark';
+  document.getElementById('themeToggleBtn').addEventListener('click', () => {
+    toggleTheme();
+    const t2 = document.documentElement.getAttribute('data-theme');
+    document.querySelector('.theme-toggle-label').textContent = t2 === 'dark' ? '☀ Light' : '🌙 Dark';
+  });
+</script>
+{% endblock %}

@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}DashForge{% endblock %}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/gridstack@10.3.1/dist/gridstack.min.css">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+  {% block head %}{% endblock %}
+</head>
+<body>
+
+<div class="sidebar-backdrop" id="sidebarBackdrop"></div>
+<button class="sidebar-toggle" id="sidebarToggle" aria-label="Toggle menu">
+  <svg viewBox="0 0 20 20"><path d="M3 5h14M3 10h14M3 15h14" stroke-width="1.8"/></svg>
+</button>
+
+<nav class="sidebar" id="sidebar">
+  <div class="sidebar-brand">
+    <div class="brand-mark">
+      <svg width="26" height="26" viewBox="0 0 26 26" fill="none">
+        <rect x="2" y="2" width="10" height="10" rx="2" fill="#10d9a0"/>
+        <rect x="14" y="2" width="10" height="10" rx="2" fill="#3b9eff" opacity=".7"/>
+        <rect x="2" y="14" width="10" height="10" rx="2" fill="#3b9eff" opacity=".7"/>
+        <rect x="14" y="14" width="10" height="10" rx="2" fill="#10d9a0" opacity=".35"/>
+      </svg>
+    </div>
+    <div class="brand-text">
+      <div class="brand-name">Dash<em>Forge</em></div>
+      <div class="brand-ver">v4.0</div>
+    </div>
+  </div>
+
+  <ul class="nav-links">
+    <li>
+      <a href="{{ url_for('index') }}" class="nav-link {% if request.endpoint=='index' %}active{% endif %}">
+        <span class="nav-icon"><svg viewBox="0 0 20 20"><rect x="2" y="2" width="7" height="7" rx="1.5"/><rect x="11" y="2" width="7" height="7" rx="1.5"/><rect x="2" y="11" width="7" height="7" rx="1.5"/><rect x="11" y="11" width="7" height="7" rx="1.5"/></svg></span>
+        <span class="nav-label">Dashboard</span>
+      </a>
+    </li>
+    <li>
+      <a href="{{ url_for('orders') }}" class="nav-link {% if request.endpoint=='orders' %}active{% endif %}">
+        <span class="nav-icon"><svg viewBox="0 0 20 20"><path d="M6 4h12M6 10h12M6 16h12M2 4h.01M2 10h.01M2 16h.01" stroke-width="1.8"/></svg></span>
+        <span class="nav-label">Orders</span>
+      </a>
+    </li>
+    <li>
+      <a href="{{ url_for('configure') }}" class="nav-link {% if request.endpoint=='configure' %}active{% endif %}">
+        <span class="nav-icon"><svg viewBox="0 0 20 20"><circle cx="10" cy="10" r="2.5"/><path d="M10 2v2M10 16v2M2 10h2M16 10h2M4.22 4.22l1.42 1.42M14.36 14.36l1.42 1.42M4.22 15.78l1.42-1.42M14.36 5.64l1.42-1.42" stroke-width="1.8"/></svg></span>
+        <span class="nav-label">Configure</span>
+      </a>
+    </li>
+  </ul>
+
+  <div class="sidebar-footer">
+    <div class="user-pill">
+      <div class="user-avatar">A</div>
+      <span>Admin</span>
+    </div>
+  </div>
+</nav>
+
+<main class="main" id="main">{% block content %}{% endblock %}</main>
+
+<div class="toast" id="globalToast"></div>
+
+<div class="overlay" id="confirmOverlay" hidden>
+  <div class="dialog">
+    <div class="dialog-icon">⚠</div>
+    <p class="dialog-msg" id="confirmMsg">Are you sure?</p>
+    <div class="dialog-actions">
+      <button class="btn btn-ghost" id="confirmNo">Cancel</button>
+      <button class="btn btn-danger" id="confirmYes">Delete</button>
+    </div>
+  </div>
+</div>
+
+<!-- CDN libraries -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/gridstack@10.3.1/dist/gridstack-all.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+
+<script>
+/* ── Apply saved theme immediately ───────────────────────────── */
+(function(){
+  const t = localStorage.getItem('dashforge-theme') || 'dark';
+  document.documentElement.setAttribute('data-theme', t);
+})();
+
+/* ── Sidebar ─────────────────────────────────────────────────── */
+const sidebar  = document.getElementById('sidebar');
+const backdrop = document.getElementById('sidebarBackdrop');
+const toggle   = document.getElementById('sidebarToggle');
+toggle?.addEventListener('click', () => { sidebar.classList.add('open'); backdrop.classList.add('visible'); });
+backdrop?.addEventListener('click', () => { sidebar.classList.remove('open'); backdrop.classList.remove('visible'); });
+
+/* ── Theme toggle ────────────────────────────────────────────── */
+function toggleTheme() {
+  const html  = document.documentElement;
+  const current = html.getAttribute('data-theme') || 'dark';
+  const next  = current === 'dark' ? 'light' : 'dark';
+  html.setAttribute('data-theme', next);
+  localStorage.setItem('dashforge-theme', next);
+  document.querySelectorAll('.theme-toggle-label').forEach(el => {
+    el.textContent = next === 'dark' ? '☀ Light' : '🌙 Dark';
+  });
+}
+
+/* ── Toast ───────────────────────────────────────────────────── */
+function showToast(msg, type='success') {
+  const t = document.getElementById('globalToast');
+  t.textContent = msg;
+  t.className = `toast toast--${type} toast--show`;
+  clearTimeout(t._tid);
+  t._tid = setTimeout(() => { t.className = 'toast'; }, 3400);
+}
+
+/* ── Confirm dialog ──────────────────────────────────────────── */
+function confirmDialog(msg) {
+  return new Promise(resolve => {
+    const ov = document.getElementById('confirmOverlay');
+    document.getElementById('confirmMsg').textContent = msg;
+    ov.hidden = false;
+    const yes = document.getElementById('confirmYes');
+    const no  = document.getElementById('confirmNo');
+    const done = ok => { ov.hidden=true; yes.onclick=null; no.onclick=null; resolve(ok); };
+    yes.onclick = () => done(true);
+    no.onclick  = () => done(false);
+  });
+}
+
+/* ── HTML escape ─────────────────────────────────────────────── */
+function esc(s) {
+  return String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+/* ── Export dashboard as PDF ─────────────────────────────────── */
+async function exportDashboardPDF(gridEl, filename) {
+  showToast('Generating PDF…', 'info');
+  try {
+    const canvas = await html2canvas(gridEl, { scale:1.5, backgroundColor: getComputedStyle(document.documentElement).getPropertyValue('--bg').trim() || '#070c14', useCORS:true, logging:false });
+    const imgData = canvas.toDataURL('image/png');
+    const { jsPDF } = window.jspdf;
+    const pdf = new jsPDF({ orientation: canvas.width > canvas.height ? 'landscape' : 'portrait', unit:'px', format:[canvas.width/1.5, canvas.height/1.5] });
+    pdf.addImage(imgData, 'PNG', 0, 0, canvas.width/1.5, canvas.height/1.5);
+    pdf.save(filename || 'dashboard.pdf');
+    showToast('PDF exported ✓', 'success');
+  } catch(e) {
+    showToast('PDF export failed', 'error');
+    console.error(e);
+  }
+}
+
+/* ── Global filter state (shared across widgets on dashboard) ── */
+window._globalFilters = {};
+</script>
+
+{% block scripts %}{% endblock %}
+</body>
+</html>
