@@ -98,11 +98,7 @@ dashforge/
 ├── requirements.txt
 │
 ├── database/
-│   ├── schema.sql                  ← Full schema + 12 seed orders
-│   ├── migration_001_named_dashboards.sql
-│   ├── migration_002_commit_history.sql
-│   └── migration_003_v4_features.sql
-│
+│   ├── schema.sql                
 ├── templates/
 │   ├── layout.html                 ← Base layout: sidebar nav, CDN imports, global JS helpers
 │   ├── dashboard.html              ← Live dashboard view: filters, date range, PDF export
@@ -120,97 +116,6 @@ dashforge/
         └── orders.js               ← Orders CRUD: load table, form validation, auto-calc total
 ```
 
----
-
-## Database Design
-
-### Tables
-
-```
-customer_orders
-────────────────
-id            INT UNSIGNED PK AUTO_INCREMENT
-first_name    VARCHAR(100)
-last_name     VARCHAR(100)
-email         VARCHAR(255)
-phone         VARCHAR(40)
-street        VARCHAR(255)
-city          VARCHAR(100)
-state         VARCHAR(100)
-postal_code   VARCHAR(20)
-country       VARCHAR(100)
-product       VARCHAR(150)
-quantity      INT UNSIGNED
-unit_price    DECIMAL(10,2)
-total_amount  DECIMAL(12,2)  ← GENERATED: quantity × unit_price
-status        ENUM('Pending','In progress','Completed')
-created_by    VARCHAR(120)
-created_at    DATETIME DEFAULT CURRENT_TIMESTAMP
-
-
-dashboard_layout
-────────────────
-id          INT UNSIGNED PK
-name        VARCHAR(120)
-layout      JSON              ← Full widget array with positions + settings
-updated_at  DATETIME          ← Auto-updated on every save
-
-
-dashboard_history
-─────────────────
-id            INT UNSIGNED PK
-dashboard_id  FK → dashboard_layout.id  (CASCADE DELETE)
-commit_msg    VARCHAR(255)
-layout        JSON              ← Snapshot at time of commit
-committed_at  DATETIME
-```
-
----
-
-## API Reference
-
-### Orders
-
-| Method | Endpoint | Description |
-|---|---|---|
-| `GET` | `/api/orders` | List all orders (newest first) |
-| `GET` | `/api/orders/<id>` | Get single order |
-| `POST` | `/api/orders` | Create order |
-| `PUT` | `/api/orders/<id>` | Update order |
-| `DELETE` | `/api/orders/<id>` | Delete order |
-
-### Dashboards
-
-| Method | Endpoint | Description |
-|---|---|---|
-| `GET` | `/api/dashboards` | List all saved dashboards |
-| `GET` | `/api/dashboards/<id>` | Load a dashboard with full layout |
-| `POST` | `/api/dashboards` | Save / overwrite a dashboard (records commit) |
-| `PATCH` | `/api/dashboards/<id>/rename` | Rename a dashboard |
-| `DELETE` | `/api/dashboards/<id>` | Delete dashboard + all its history |
-
-### Commit History
-
-| Method | Endpoint | Description |
-|---|---|---|
-| `GET` | `/api/dashboards/<id>/history` | List all commits for a dashboard |
-| `POST` | `/api/dashboards/<id>/history` | Save a manual commit snapshot |
-| `GET` | `/api/history/<hid>/preview` | Get commit data for read-only preview |
-| `POST` | `/api/history/<hid>/restore` | Restore a dashboard to a historical commit |
-| `DELETE` | `/api/history/<hid>` | Delete a single commit |
-
-### Widget Data
-
-| Method | Endpoint | Description |
-|---|---|---|
-| `POST` | `/api/widget/kpi` | KPI value + trend percentage |
-| `POST` | `/api/widget/chart` | Chart labels + values (bar, line, area, scatter) |
-| `POST` | `/api/widget/pie` | Pie chart data |
-| `POST` | `/api/widget/table` | Paginated table rows with sort support |
-| `GET` | `/api/filter-options` | Distinct values for all filter dropdowns |
-| `GET` | `/api/layout` | Load the most recently updated dashboard |
-
----
 
 ## How the Dashboard Builder Works
 
@@ -408,7 +313,7 @@ docker restart dashforge-flask
 | Measure | Detail |
 |---|---|
 | SSH access | Key-based login only — password auth disabled |
-| Open ports | 22 (SSH), 8000 (App), 8080 (Jenkins) only |
+| Open ports | 22 (SSH), 8000 (App) |
 | Docker credentials | Managed via access tokens — no plaintext passwords |
 | Secret key | Set via environment variable — never committed to git |
 
