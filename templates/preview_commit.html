@@ -104,7 +104,7 @@
     el.setAttribute('gs-id', w.id);
     const inner = document.createElement('div');
     inner.className = 'grid-stack-item-content';
-    inner.innerHTML = Widgets.buildShell(w, false); // editable=false
+    inner.innerHTML = Widgets.buildShell(w, false);
     el.appendChild(inner);
     grid.addWidget(el);
     Widgets.renderWidget(w, 'all');
@@ -117,7 +117,11 @@
         const el = entry.target.closest('.grid-stack-item');
         if (!el) return;
         const {width:ww, height:hh} = entry.contentRect;
-        el.setAttribute('data-orient', ww/(hh||1) > 1.8 ? 'h' : ww/(hh||1) < 0.8 ? 'v' : 's');
+        const asp = ww/(hh||1);
+        let orient = 's';
+        if (asp > 1.5) orient = 'h';
+        else if (asp < 0.8) orient = 'v';
+        el.setAttribute('data-orient', orient);
       });
     });
     document.querySelectorAll('.grid-stack-item-content').forEach(el => ro.observe(el));

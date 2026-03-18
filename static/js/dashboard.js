@@ -1,22 +1,22 @@
 /**
- * dashboard.js  v5
- * - Auto-loads latest dashboard (no blocking empty page)
- * - Shows subtle empty-hint only when no widgets exist
- * - Global 10s refresh, advanced filters, PDF export, load modal
- * - Dimension-responsive ResizeObserver
- * - Theme toggle sync
+ * dashboard.js  v7.3  - Fixed duplicate API calls, light theme only
  */
+
 (async function DashboardView() {
 
   let widgetList         = [];
   let currentDashId      = null;
   let grid               = null;
-  let globalRefreshTimer = null;
   let roObserver         = null;
+  let renderInProgress = false; // Prevent multiple simultaneous renders
 
   const gridEl    = document.getElementById('dashGrid');
   const emptyEl   = document.getElementById('emptyState');
   const nameLabel = document.getElementById('dashNameLabel');
+
+  // Set light theme
+  document.documentElement.setAttribute('data-theme', 'light');
+  localStorage.setItem('dashforge-theme', 'light');
 
   /* ── Helpers ─────────────────────────────────────────────── */
   function getDateRange() { return document.getElementById('dateFilter')?.value || 'all'; }
@@ -26,19 +26,71 @@
     return new Date(d).toLocaleString('en-US', { month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' });
   }
 
-  /* ── ResizeObserver for orientation ──────────────────────── */
+  /* ── Add clear filter button ─────────────────────────────── */
+  function addClearFilterButton() {
+    const headerRight = document.querySelector('.page-header__right');
+    if (headerRight && !document.getElementById('clearFilterBtn')) {
+      const clearBtn = document.createElement('button');
+      clearBtn.id = 'clearFilterBtn';
+      clearBtn.className = 'btn btn-ghost';
+      clearBtn.innerHTML = `
+        <svg class="icon-xs" viewBox="0 0 16 16"><path d="M4 8h8M2 4h12M6 12h4"/><circle cx="8" cy="8" r="6.5" stroke="currentColor"/></svg>
+        Clear Filter
+      `;
+      clearBtn.style.display = 'none';
+      clearBtn.addEventListener('click', () => {
+        Widgets.clearCrossFilter();
+      });
+      headerRight.appendChild(clearBtn);
+    }
+  }
+
+  /* ── Debounced orientation observer ──────────────────────── */
   function startOrientationObserver() {
     if (roObserver) roObserver.disconnect();
     if (!window.ResizeObserver) return;
+    
+    const orientationTimers = {};
+    
     roObserver = new ResizeObserver(entries => {
       entries.forEach(e => {
         const el = e.target.closest('.grid-stack-item');
         if (!el) return;
-        const { width:w, height:h } = e.contentRect;
-        const asp = w / (h || 1);
-        el.setAttribute('data-orient', asp > 1.8 ? 'h' : asp < 0.8 ? 'v' : 's');
+        
+        const widgetId = el.getAttribute('gs-id');
+        if (!widgetId) return;
+        
+        // Debounce orientation updates
+        if (orientationTimers[widgetId]) {
+          clearTimeout(orientationTimers[widgetId]);
+        }
+        
+        orientationTimers[widgetId] = setTimeout(() => {
+          const { width:w, height:h } = e.contentRect;
+          const asp = w / (h || 1);
+          let orient = 's';
+          if (asp > 1.5) orient = 'h';
+          else if (asp < 0.8) orient = 'v';
+          el.setAttribute('data-orient', orient);
+          
+          // Update widget content based on new orientation (only for KPI)
+          const widget = window._widgetRegistry?.[widgetId];
+          if (widget && widget.type === 'kpi') {
+            // Use a longer delay to prevent rapid re-renders
+            setTimeout(() => {
+              if (!renderInProgress) {
+                renderInProgress = true;
+                Widgets.renderWidget(widget, getDateRange());
+                setTimeout(() => { renderInProgress = false; }, 200);
+              }
+            }, 200);
+          }
+          
+          delete orientationTimers[widgetId];
+        }, 150);
       });
     });
+    
     document.querySelectorAll('.grid-stack-item-content').forEach(el => roObserver.observe(el));
   }
 
@@ -47,50 +99,65 @@
     widgetList    = Array.isArray(data.layout) ? data.layout : [];
     currentDashId = data.id || null;
     window._widgetRegistry = {};
+    
+    // Clear any existing filter
+    Widgets.clearCrossFilter();
+    
     widgetList.forEach(w => { window._widgetRegistry[w.id] = w; });
 
-    // Update subtitle
     if (data.name) {
       nameLabel.innerHTML = `Viewing: <strong style="color:var(--accent)">${esc(data.name)}</strong>`;
     } else {
       nameLabel.textContent = 'Live data overview';
     }
 
-    // Destroy old grid
-    if (grid) { try { grid.destroy(false); } catch {} grid = null; }
+    if (grid) { 
+      try { grid.destroy(false); } catch {} 
+      grid = null; 
+    }
     gridEl.innerHTML = '';
 
-    // Show/hide empty hint
     emptyEl.hidden = widgetList.length > 0;
 
-    if (!widgetList.length) return; // hint shown, nothing to render
+    if (!widgetList.length) return;
 
-    // Init Gridstack
     grid = GridStack.init({
-      column: 12, cellHeight: 62,
-      staticGrid: true, disableDrag: true, disableResize: true,
+      column: 12, 
+      cellHeight: 62,
+      staticGrid: true, 
+      disableDrag: true, 
+      disableResize: true,
     }, '#dashGrid');
 
     const dr = getDateRange();
-    widgetList.forEach(w => {
+    
+    // Render widgets one by one with a small delay to prevent overwhelming the server
+    widgetList.forEach((w, index) => {
       const el = document.createElement('div');
       el.className = 'grid-stack-item';
-      el.setAttribute('gs-x', w.x ?? 0); el.setAttribute('gs-y', w.y ?? 0);
-      el.setAttribute('gs-w', w.w ?? 4);  el.setAttribute('gs-h', w.h ?? 3);
+      el.setAttribute('gs-x', w.x ?? 0); 
+      el.setAttribute('gs-y', w.y ?? 0);
+      el.setAttribute('gs-w', w.w ?? 4);  
+      el.setAttribute('gs-h', w.h ?? 3);
       el.setAttribute('gs-id', w.id);
       const inner = document.createElement('div');
       inner.className = 'grid-stack-item-content';
       inner.innerHTML = Widgets.buildShell(w, false);
       el.appendChild(inner);
       grid.addWidget(el);
-      Widgets.renderWidget(w, dr);
-      Widgets.startAutoRefresh(w, dr);
+      
+      // Stagger rendering to avoid too many simultaneous API calls
+      setTimeout(() => {
+        Widgets.renderWidget(w, dr);
+      }, index * 100);
     });
 
-    setTimeout(startOrientationObserver, 200);
+    setTimeout(startOrientationObserver, 500);
+    
+    // Add clear filter button
+    addClearFilterButton();
   }
 
-  /* ── Load a dashboard (by id or latest) ──────────────────── */
   async function loadLayout(id) {
     const url = id ? `/api/dashboards/${id}` : '/api/layout';
     const res = await fetch(url);
@@ -98,11 +165,10 @@
     return res.json();
   }
 
-  /* ── Init: auto-load latest saved dashboard ──────────────── */
+  /* ── Init ────────────────────────────────────────────────── */
   try {
     const data = await loadLayout(null);
     buildGrid(data);
-    // If completely no dashboards exist, show a helpful subtitle
     if (!data.id) {
       nameLabel.innerHTML = `No saved dashboards yet — <a href="/configure" style="color:var(--accent)">Configure one</a>`;
     }
@@ -111,25 +177,20 @@
     emptyEl.hidden = false;
   }
 
-  /* ── Global 10-second real-time refresh ──────────────────── */
-  function startGlobalRefresh() {
-    stopGlobalRefresh();
-    globalRefreshTimer = setInterval(() => {
-      const dr = getDateRange();
-      widgetList.forEach(w => Widgets.renderWidget(w, dr));
-    }, 10000);
-  }
-  function stopGlobalRefresh() {
-    if (globalRefreshTimer) { clearInterval(globalRefreshTimer); globalRefreshTimer = null; }
-  }
-  startGlobalRefresh();
-  document.addEventListener('visibilitychange', () =>
-    document.hidden ? stopGlobalRefresh() : startGlobalRefresh());
-
-  /* ── Date filter ─────────────────────────────────────────── */
+  /* ── Date filter with debounce ───────────────────────────── */
+  let filterTimer;
   document.getElementById('dateFilter')?.addEventListener('change', () => {
-    const dr = getDateRange();
-    widgetList.forEach(w => Widgets.renderWidget(w, dr));
+    if (filterTimer) clearTimeout(filterTimer);
+    filterTimer = setTimeout(() => {
+      const dr = getDateRange();
+      renderInProgress = true;
+      widgetList.forEach((w, index) => {
+        setTimeout(() => {
+          Widgets.renderWidget(w, dr);
+        }, index * 50);
+      });
+      setTimeout(() => { renderInProgress = false; }, 1000);
+    }, 300);
   });
 
   /* ── Advanced filters ────────────────────────────────────── */
@@ -138,9 +199,12 @@
       const opts = await (await fetch('/api/filter-options')).json();
       const bar  = document.getElementById('filtersBar');
       const fields = [
-        { key:'product', label:'Product' }, { key:'status', label:'Status' },
-        { key:'created_by', label:'Created By' }, { key:'country', label:'Country' },
+        { key:'product', label:'Product' }, 
+        { key:'status', label:'Status' },
+        { key:'created_by', label:'Created By' }, 
+        { key:'country', label:'Country' },
       ];
+      
       bar.innerHTML = `<label>Filters:</label>` +
         fields.map(f => `
           <select data-filter="${f.key}">
@@ -149,18 +213,36 @@
           </select>`).join('') +
         `<button class="filter-reset" id="filterResetBtn">✕ Reset</button>`;
 
+      let filterChangeTimer;
       bar.querySelectorAll('select').forEach(sel => {
         sel.addEventListener('change', () => {
-          window._globalFilters[`filter_${sel.dataset.filter}`] = sel.value;
-          const dr = getDateRange();
-          widgetList.forEach(w => Widgets.renderWidget(w, dr));
+          if (filterChangeTimer) clearTimeout(filterChangeTimer);
+          filterChangeTimer = setTimeout(() => {
+            window._globalFilters = window._globalFilters || {};
+            window._globalFilters[`filter_${sel.dataset.filter}`] = sel.value;
+            const dr = getDateRange();
+            renderInProgress = true;
+            widgetList.forEach((w, index) => {
+              setTimeout(() => {
+                Widgets.renderWidget(w, dr);
+              }, index * 50);
+            });
+            setTimeout(() => { renderInProgress = false; }, 1000);
+          }, 300);
         });
       });
+      
       document.getElementById('filterResetBtn')?.addEventListener('click', () => {
         window._globalFilters = {};
         bar.querySelectorAll('select').forEach(s => s.value = '');
         const dr = getDateRange();
-        widgetList.forEach(w => Widgets.renderWidget(w, dr));
+        renderInProgress = true;
+        widgetList.forEach((w, index) => {
+          setTimeout(() => {
+            Widgets.renderWidget(w, dr);
+          }, index * 50);
+        });
+        setTimeout(() => { renderInProgress = false; }, 1000);
       });
     } catch { /* silent */ }
   })();
@@ -169,13 +251,6 @@
   document.getElementById('exportPdfBtn')?.addEventListener('click', async () => {
     const name = nameLabel.textContent.replace(/[^a-z0-9]/gi, '_').toLowerCase() || 'dashboard';
     await exportDashboardPDF(gridEl, `${name}.pdf`);
-  });
-
-  /* ── Theme toggle sync ───────────────────────────────────── */
-  document.querySelector('.theme-toggle')?.addEventListener('click', () => {
-    toggleTheme();
-    const t = document.documentElement.getAttribute('data-theme');
-    document.querySelector('.theme-toggle-label').textContent = t === 'dark' ? '☀ Light' : '🌙 Dark';
   });
 
   /* ── Load Dashboard modal ────────────────────────────────── */
@@ -202,10 +277,7 @@
       listEl.querySelectorAll('.dash-item').forEach(item => {
         item.addEventListener('click', async () => {
           overlay.hidden = true;
-          stopGlobalRefresh();
-          widgetList.forEach(w => Widgets.stopAutoRefresh(w.id));
           buildGrid(await loadLayout(item.dataset.id));
-          startGlobalRefresh();
         });
       });
     } catch {
@@ -218,5 +290,20 @@
   document.getElementById('cancelLoadBtn')?.addEventListener('click', () => {
     document.getElementById('loadOverlay').hidden = true;
   });
+
+  // Monitor filter changes to show/hide clear button (debounced)
+  let filterCheckTimer;
+  function checkFilter() {
+    if (filterCheckTimer) clearTimeout(filterCheckTimer);
+    filterCheckTimer = setTimeout(() => {
+      const filter = Widgets.getCurrentFilter();
+      const clearBtn = document.getElementById('clearFilterBtn');
+      if (clearBtn) {
+        clearBtn.style.display = filter ? 'inline-flex' : 'none';
+      }
+    }, 100);
+  }
+  
+  setInterval(checkFilter, 1000);
 
 })();

@@ -1,0 +1,67 @@
+version: '3.8'
+
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: dashforge-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-rootpassword123}
+      MYSQL_DATABASE: ${MYSQL_DB:-dashforge_db}
+      MYSQL_USER: ${MYSQL_USER:-dashforge}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-dashforgepass456}
+    ports:
+      - "3307:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+      - ./database/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+    networks:
+      - dashforge-network
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      timeout: 10s
+      retries: 5
+      interval: 30s
+
+  flask-app:
+    build: .
+    container_name: dashforge-flask
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+    environment:
+      MYSQL_HOST: mysql
+      MYSQL_USER: ${MYSQL_USER:-dashforge}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-dashforgepass456}
+      MYSQL_DB: ${MYSQL_DB:-dashforge_db}
+      SECRET_KEY: ${SECRET_KEY:-dev-secret-change-in-prod}
+      FLASK_DEBUG: "false"
+    ports:
+      - "5001:5000"
+    volumes:
+      - ./static:/app/static
+    networks:
+      - dashforge-network
+
+  nginx:
+    image: nginx:1.25-alpine
+    container_name: dashforge-nginx
+    restart: unless-stopped
+    ports:
+      - "8000:80"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./static:/static:ro
+    depends_on:
+      - flask-app
+    networks:
+      - dashforge-network
+
+networks:
+  dashforge-network:
+    driver: bridge
+
+volumes:
+  mysql-data:
+    driver: local

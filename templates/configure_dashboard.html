@@ -124,7 +124,7 @@
 </div>
 <div class="panel-backdrop" id="historyBackdrop" hidden></div>
 
-<!-- ── SAVE DASHBOARD MODAL (always includes commit message) ── -->
+<!-- ── SMART SAVE DASHBOARD MODAL ── -->
 <div class="overlay" id="saveOverlay" hidden>
   <div class="save-dialog">
     <h3>
@@ -132,24 +132,23 @@
       Save Dashboard
     </h3>
 
-    <div class="form-field" style="margin-top:4px">
+    <!-- Dashboard Name row - visible for new dashboards, hidden for existing -->
+    <div class="form-field" id="nameRow" style="margin-top:4px; display: block;">
       <label>Dashboard Name <span class="req">*</span></label>
       <input type="text" id="saveName" placeholder="e.g. Sales Overview Q1" maxlength="120">
       <span class="field-err" id="saveNameErr"></span>
     </div>
 
-    <!-- ★ Commit message — ALWAYS shown, required on overwrite -->
-    <div class="commit-msg-section">
-      <div class="commit-label">
-        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="8" cy="8" r="3"/><path d="M1 8h4M11 8h4"/></svg>
-        Commit Message <span class="req" id="commitReq">*</span>
-      </div>
+    <!-- Commit message row - always visible -->
+    <div class="form-field" id="commitRow" style="display: block;">
+      <label>Commit Message <span class="req">*</span></label>
       <input type="text" id="saveCommitMsg" placeholder="Describe your changes…" maxlength="255">
       <span class="field-err" id="commitMsgErr"></span>
       <div class="commit-hint">Every save is recorded in commit history so you can preview & restore it later.</div>
     </div>
 
-    <div class="form-field" id="overwriteRow" style="display:none;margin-top:10px">
+    <!-- Overwrite checkbox - visible only for existing dashboards -->
+    <div class="form-field" id="overwriteRow" style="display: none; margin-top:10px">
       <label class="check-row">
         <input type="checkbox" id="overwriteCheck" checked>
         Overwrite existing save (uncheck to create new)
@@ -209,6 +208,26 @@
     </div>
   </div>
 </div>
+
+<!-- Add unsaved changes indicator script -->
+<script>
+  // Add visual indicator for unsaved changes
+  document.addEventListener('DOMContentLoaded', function() {
+    const title = document.querySelector('.page-title');
+    let hasUnsavedIndicator = false;
+    
+    // Function to update title indicator
+    window.updateUnsavedIndicator = function(hasUnsaved) {
+      if (hasUnsaved && !hasUnsavedIndicator) {
+        title.innerHTML = 'Configure Dashboard <span class="unsaved-indicator">*</span>';
+        hasUnsavedIndicator = true;
+      } else if (!hasUnsaved && hasUnsavedIndicator) {
+        title.innerHTML = 'Configure Dashboard';
+        hasUnsavedIndicator = false;
+      }
+    };
+  });
+</script>
 {% endblock %}
 
 {% block scripts %}

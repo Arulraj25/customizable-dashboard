@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<html lang="en" data-theme="dark">
+<html lang="en" data-theme="light">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=yes">
   <title>{% block title %}DashForge{% endblock %}</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -22,15 +22,15 @@
   <div class="sidebar-brand">
     <div class="brand-mark">
       <svg width="26" height="26" viewBox="0 0 26 26" fill="none">
-        <rect x="2" y="2" width="10" height="10" rx="2" fill="#10d9a0"/>
-        <rect x="14" y="2" width="10" height="10" rx="2" fill="#3b9eff" opacity=".7"/>
-        <rect x="2" y="14" width="10" height="10" rx="2" fill="#3b9eff" opacity=".7"/>
-        <rect x="14" y="14" width="10" height="10" rx="2" fill="#10d9a0" opacity=".35"/>
+        <rect x="2" y="2" width="10" height="10" rx="2" fill="#0aa87a"/>
+        <rect x="14" y="2" width="10" height="10" rx="2" fill="#1d6ed8" opacity=".7"/>
+        <rect x="2" y="14" width="10" height="10" rx="2" fill="#1d6ed8" opacity=".7"/>
+        <rect x="14" y="14" width="10" height="10" rx="2" fill="#0aa87a" opacity=".35"/>
       </svg>
     </div>
     <div class="brand-text">
       <div class="brand-name">Dash<em>Forge</em></div>
-      <div class="brand-ver">v4.0</div>
+      <div class="brand-ver">v7.2</div>
     </div>
   </div>
 
@@ -85,10 +85,10 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 
 <script>
-/* ── Apply saved theme immediately ───────────────────────────── */
+/* ── Apply light theme ──────────────────────────────────────── */
 (function(){
-  const t = localStorage.getItem('dashforge-theme') || 'dark';
-  document.documentElement.setAttribute('data-theme', t);
+  document.documentElement.setAttribute('data-theme', 'light');
+  localStorage.setItem('dashforge-theme', 'light');
 })();
 
 /* ── Sidebar ─────────────────────────────────────────────────── */
@@ -97,18 +97,6 @@ const backdrop = document.getElementById('sidebarBackdrop');
 const toggle   = document.getElementById('sidebarToggle');
 toggle?.addEventListener('click', () => { sidebar.classList.add('open'); backdrop.classList.add('visible'); });
 backdrop?.addEventListener('click', () => { sidebar.classList.remove('open'); backdrop.classList.remove('visible'); });
-
-/* ── Theme toggle ────────────────────────────────────────────── */
-function toggleTheme() {
-  const html  = document.documentElement;
-  const current = html.getAttribute('data-theme') || 'dark';
-  const next  = current === 'dark' ? 'light' : 'dark';
-  html.setAttribute('data-theme', next);
-  localStorage.setItem('dashforge-theme', next);
-  document.querySelectorAll('.theme-toggle-label').forEach(el => {
-    el.textContent = next === 'dark' ? '☀ Light' : '🌙 Dark';
-  });
-}
 
 /* ── Toast ───────────────────────────────────────────────────── */
 function showToast(msg, type='success') {
@@ -142,10 +130,19 @@ function esc(s) {
 async function exportDashboardPDF(gridEl, filename) {
   showToast('Generating PDF…', 'info');
   try {
-    const canvas = await html2canvas(gridEl, { scale:1.5, backgroundColor: getComputedStyle(document.documentElement).getPropertyValue('--bg').trim() || '#070c14', useCORS:true, logging:false });
+    const canvas = await html2canvas(gridEl, { 
+      scale:1.5, 
+      backgroundColor: '#f0f4fa', 
+      useCORS:true, 
+      logging:false 
+    });
     const imgData = canvas.toDataURL('image/png');
     const { jsPDF } = window.jspdf;
-    const pdf = new jsPDF({ orientation: canvas.width > canvas.height ? 'landscape' : 'portrait', unit:'px', format:[canvas.width/1.5, canvas.height/1.5] });
+    const pdf = new jsPDF({ 
+      orientation: canvas.width > canvas.height ? 'landscape' : 'portrait', 
+      unit:'px', 
+      format:[canvas.width/1.5, canvas.height/1.5] 
+    });
     pdf.addImage(imgData, 'PNG', 0, 0, canvas.width/1.5, canvas.height/1.5);
     pdf.save(filename || 'dashboard.pdf');
     showToast('PDF exported ✓', 'success');
@@ -155,7 +152,7 @@ async function exportDashboardPDF(gridEl, filename) {
   }
 }
 
-/* ── Global filter state (shared across widgets on dashboard) ── */
+/* ── Global filter state ─────────────────────────────────────── */
 window._globalFilters = {};
 </script>
 

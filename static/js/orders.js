@@ -1,13 +1,5 @@
 /**
- * orders.js
- * ──────────────────────────────────────────────────────────────
- * Customer Orders CRUD:
- *  • Load & render orders table
- *  • Search + status filter
- *  • Create / Edit / Delete orders via popup modal
- *  • Auto-calc total_amount = quantity × unit_price
- *  • Validation: required fields show "Please fill the field"
- * ──────────────────────────────────────────────────────────────
+ * orders.js  v7.0  - Customer Orders CRUD with validation
  */
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -137,13 +129,18 @@ document.addEventListener('DOMContentLoaded', () => {
   ['closeModalBtn','cancelModalBtn'].forEach(id => {
     document.getElementById(id)?.addEventListener('click', closeModal);
   });
+  
   overlay.addEventListener('click', e => { if (e.target === overlay) closeModal(); });
-  function closeModal() { overlay.hidden = true; }
+  
+  function closeModal() { 
+    overlay.hidden = true; 
+  }
 
   /* ── Auto-calc total ────────────────────────────────────────── */
   ['fQty','fUnitPrice'].forEach(id => {
     document.getElementById(id)?.addEventListener('input', calcTotal);
   });
+  
   function calcTotal() {
     const qty   = parseFloat(document.getElementById('fQty')?.value)       || 0;
     const price = parseFloat(document.getElementById('fUnitPrice')?.value) || 0;
@@ -222,6 +219,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const span = el.closest('.form-field')?.querySelector('.field-err');
     if (span) span.textContent = msg;
   }
+  
   function clearErrors() {
     document.querySelectorAll('.has-error').forEach(el => el.classList.remove('has-error'));
     document.querySelectorAll('.field-err').forEach(el => { el.textContent = ''; });
@@ -242,10 +240,12 @@ document.addEventListener('DOMContentLoaded', () => {
     if (s === 'Completed')   return 'badge-done';
     return '';
   }
+  
   function fmtDate(d) {
     if (!d) return '—';
     return new Date(d).toLocaleDateString('en-US', { year:'numeric', month:'short', day:'numeric' });
   }
+  
   function esc(s) {
     return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
   }

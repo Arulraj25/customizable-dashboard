@@ -1,19 +1,15 @@
 """
 app.py – DashForge Flask backend
-Provides:
-  • Page routes  : /, /orders, /configure
-  • Orders API   : CRUD on customer_orders
-  • Layout API   : load / save dashboard JSON
-  • Widget APIs  : /api/widget/{kpi,chart,pie,table}
+Complete implementation with light theme only
 """
 
 import json
 import decimal
 from datetime import datetime, date, timedelta, timezone
-
 from flask import Flask, render_template, request, jsonify
 from flask_mysqldb import MySQL
 from config import Config
+import MySQLdb
 
 app = Flask(__name__)
 app.config.from_object(Config)
@@ -53,6 +49,11 @@ def _date_where(date_range: str) -> str:
     if date_range == "last90":
         return f"created_at >= '{today - timedelta(days=90)}'"
     return "1=1"   # all time
+
+
+def is_duplicate_error(e):
+    """Check if error is a duplicate entry error"""
+    return hasattr(e, 'args') and len(e.args) >= 2 and e.args[0] == 1062
 
 
 # ─────────────────────────────────────────────────────────────
@@ -235,41 +236,76 @@ def save_dashboard():
     did        = data.get("id")          # present when overwriting existing
     cur        = mysql.connection.cursor()
 
-    if did:
-        # Snapshot the CURRENT layout before overwriting (only if dashboard exists)
-        cur.execute("SELECT layout FROM dashboard_layout WHERE id=%s", (did,))
-        existing = cur.fetchone()
-        if existing and commit_msg:
-            cur.execute("""
-                INSERT INTO dashboard_history (dashboard_id, commit_msg, layout)
-                VALUES (%s, %s, %s)
-            """, (did, commit_msg, existing["layout"]))
+    try:
+        if did:
+            # Check if updating to a name that already exists (excluding current dashboard)
+            cur.execute("SELECT id FROM dashboard_layout WHERE name = %s AND id != %s", (name, did))
+            existing = cur.fetchone()
+            if existing:
+                cur.close()
+                return _json_resp({"success": False, "error": "duplicate_name", "message": "A dashboard with this name already exists"}, 400)
 
-        cur.execute("UPDATE dashboard_layout SET name=%s, layout=%s WHERE id=%s",
-                    (name, layout, did))
-        if cur.rowcount == 0:
-            did = None   # row gone – fall through to insert
+            # Snapshot the CURRENT layout before overwriting
+            cur.execute("SELECT layout FROM dashboard_layout WHERE id=%s", (did,))
+            existing = cur.fetchone()
+            if existing and commit_msg:
+                # Check for duplicate commit message for this dashboard
+                cur.execute("SELECT id FROM dashboard_history WHERE dashboard_id = %s AND commit_msg = %s", (did, commit_msg))
+                duplicate_commit = cur.fetchone()
+                if duplicate_commit:
+                    cur.close()
+                    return _json_resp({"success": False, "error": "duplicate_commit", "message": "A commit with this message already exists"}, 400)
+                
+                cur.execute("""
+                    INSERT INTO dashboard_history (dashboard_id, commit_msg, layout)
+                    VALUES (%s, %s, %s)
+                """, (did, commit_msg, existing["layout"]))
 
-    if not did:
-        cur.execute("INSERT INTO dashboard_layout (name, layout) VALUES (%s, %s)",
-                    (name, layout))
-        did = cur.lastrowid
-        # First commit = "Initial save"
-        if commit_msg:
-            cur.execute("""
-                INSERT INTO dashboard_history (dashboard_id, commit_msg, layout)
-                VALUES (%s, %s, %s)
-            """, (did, commit_msg, layout))
+            cur.execute("UPDATE dashboard_layout SET name=%s, layout=%s WHERE id=%s",
+                        (name, layout, did))
+            if cur.rowcount == 0:
+                did = None   # row gone – fall through to insert
 
-    mysql.connection.commit()
-    cur.close()
-    return _json_resp({"success": True, "id": did, "name": name})
+        if not did:
+            # Check for duplicate dashboard name
+            cur.execute("SELECT id FROM dashboard_layout WHERE name = %s", (name,))
+            existing = cur.fetchone()
+            if existing:
+                cur.close()
+                return _json_resp({"success": False, "error": "duplicate_name", "message": "A dashboard with this name already exists"}, 400)
+
+            cur.execute("INSERT INTO dashboard_layout (name, layout) VALUES (%s, %s)",
+                        (name, layout))
+            did = cur.lastrowid
+            # First commit
+            if commit_msg:
+                # Check for duplicate commit message for this new dashboard
+                cur.execute("SELECT id FROM dashboard_history WHERE dashboard_id = %s AND commit_msg = %s", (did, commit_msg))
+                duplicate_commit = cur.fetchone()
+                if duplicate_commit:
+                    cur.close()
+                    return _json_resp({"success": False, "error": "duplicate_commit", "message": "A commit with this message already exists"}, 400)
+                    
+                cur.execute("""
+                    INSERT INTO dashboard_history (dashboard_id, commit_msg, layout)
+                    VALUES (%s, %s, %s)
+                """, (did, commit_msg, layout))
+
+        mysql.connection.commit()
+        cur.close()
+        return _json_resp({"success": True, "id": did, "name": name})
+        
+    except Exception as e:
+        mysql.connection.rollback()
+        cur.close()
+        if is_duplicate_error(e):
+            return _json_resp({"success": False, "error": "duplicate_entry", "message": "Duplicate entry found"}, 400)
+        return _json_resp({"success": False, "error": str(e)}, 500)
 
 
 @app.route("/api/dashboards/<int:did>", methods=["DELETE"])
 def delete_dashboard(did):
     cur = mysql.connection.cursor()
-    # Also delete all history commits for this dashboard
     cur.execute("DELETE FROM dashboard_history WHERE dashboard_id=%s", (did,))
     cur.execute("DELETE FROM dashboard_layout WHERE id=%s", (did,))
     mysql.connection.commit()
@@ -293,7 +329,6 @@ def get_history(did):
     """, (did,))
     rows = cur.fetchall()
     cur.close()
-    # Parse layout JSON for each row
     for r in rows:
         if isinstance(r["layout"], str):
             r["layout"] = json.loads(r["layout"])
@@ -308,20 +343,33 @@ def create_commit(did):
     layout     = json.dumps(data.get("layout", []))
 
     cur = mysql.connection.cursor()
-    # Verify dashboard exists
-    cur.execute("SELECT id FROM dashboard_layout WHERE id=%s", (did,))
-    if not cur.fetchone():
-        cur.close()
-        return _json_resp({"error": "Dashboard not found"}, 404)
+    try:
+        cur.execute("SELECT id FROM dashboard_layout WHERE id=%s", (did,))
+        if not cur.fetchone():
+            cur.close()
+            return _json_resp({"error": "Dashboard not found"}, 404)
 
-    cur.execute("""
-        INSERT INTO dashboard_history (dashboard_id, commit_msg, layout)
-        VALUES (%s, %s, %s)
-    """, (did, commit_msg, layout))
-    mysql.connection.commit()
-    commit_id = cur.lastrowid
-    cur.close()
-    return _json_resp({"success": True, "id": commit_id, "commit_msg": commit_msg})
+        cur.execute("SELECT id FROM dashboard_history WHERE dashboard_id = %s AND commit_msg = %s", (did, commit_msg))
+        duplicate_commit = cur.fetchone()
+        if duplicate_commit:
+            cur.close()
+            return _json_resp({"success": False, "error": "duplicate_commit", "message": "A commit with this message already exists"}, 400)
+
+        cur.execute("""
+            INSERT INTO dashboard_history (dashboard_id, commit_msg, layout)
+            VALUES (%s, %s, %s)
+        """, (did, commit_msg, layout))
+        mysql.connection.commit()
+        commit_id = cur.lastrowid
+        cur.close()
+        return _json_resp({"success": True, "id": commit_id, "commit_msg": commit_msg})
+        
+    except Exception as e:
+        mysql.connection.rollback()
+        cur.close()
+        if is_duplicate_error(e):
+            return _json_resp({"success": False, "error": "duplicate_commit", "message": "A commit with this message already exists"}, 400)
+        return _json_resp({"success": False, "error": str(e)}, 500)
 
 
 @app.route("/api/history/<int:hid>/restore", methods=["POST"])
@@ -334,7 +382,6 @@ def restore_commit(hid):
         cur.close()
         return _json_resp({"error": "Commit not found"}, 404)
 
-    # Update dashboard_layout with historical layout
     cur.execute("UPDATE dashboard_layout SET layout=%s WHERE id=%s",
                 (row["layout"], row["dashboard_id"]))
     mysql.connection.commit()
@@ -354,7 +401,6 @@ def delete_commit(hid):
     return _json_resp({"success": True})
 
 
-# Legacy single-layout endpoint – keeps dashboard.html working
 @app.route("/api/layout", methods=["GET"])
 def get_layout():
     cur = mysql.connection.cursor()
@@ -370,7 +416,29 @@ def get_layout():
 
 
 # ─────────────────────────────────────────────────────────────
-# Advanced filter helpers
+# Dashboard rename API (with duplicate check)
+# ─────────────────────────────────────────────────────────────
+
+@app.route("/api/dashboards/<int:did>/rename", methods=["PATCH"])
+def rename_dashboard(did):
+    data = request.get_json(force=True)
+    name = (data.get("name") or "Untitled").strip()[:120]
+    cur  = mysql.connection.cursor()
+    
+    cur.execute("SELECT id FROM dashboard_layout WHERE name = %s AND id != %s", (name, did))
+    existing = cur.fetchone()
+    if existing:
+        cur.close()
+        return _json_resp({"success": False, "error": "duplicate_name", "message": "A dashboard with this name already exists"}, 400)
+    
+    cur.execute("UPDATE dashboard_layout SET name=%s WHERE id=%s", (name, did))
+    mysql.connection.commit()
+    cur.close()
+    return _json_resp({"success": True, "name": name})
+
+
+# ─────────────────────────────────────────────────────────────
+# Filter helpers
 # ─────────────────────────────────────────────────────────────
 
 def _filter_clauses(cfg: dict) -> str:
@@ -392,10 +460,6 @@ def _filter_clauses(cfg: dict) -> str:
     return (" AND " + " AND ".join(clauses)) if clauses else ""
 
 
-# ─────────────────────────────────────────────────────────────
-# Filter options API
-# ─────────────────────────────────────────────────────────────
-
 @app.route("/api/filter-options", methods=["GET"])
 def filter_options():
     """Return distinct values for all filter dropdowns."""
@@ -403,13 +467,14 @@ def filter_options():
     result = {}
     for field in ("product", "status", "created_by", "country"):
         cur.execute(f"SELECT DISTINCT {field} AS v FROM customer_orders ORDER BY {field}")
-        result[field] = [r["v"] for r in cur.fetchall() if r["v"]]
+        rows = cur.fetchall()
+        result[field] = [r["v"] for r in rows if r["v"]]
     cur.close()
     return _json_resp(result)
 
 
 # ─────────────────────────────────────────────────────────────
-# Widget data APIs
+# Widget data APIs with cross-filtering support
 # ─────────────────────────────────────────────────────────────
 
 @app.route("/api/widget/kpi", methods=["POST"])
@@ -418,15 +483,24 @@ def widget_kpi():
     metric     = cfg.get("metric",      "total_amount")
     agg        = cfg.get("aggregation", "sum").upper()
     date_range = cfg.get("dateRange",   "all")
-    where      = _date_where(date_range) + _filter_clauses(cfg)
+    
+    # Handle cross-filtering
+    filter_field = cfg.get("filter_field")
+    filter_value = cfg.get("filter_value")
+    
+    where = _date_where(date_range)
+    
+    if filter_field and filter_value:
+        where += f" AND {filter_field} = '{filter_value}'"
+    
+    where += _filter_clauses(cfg)
 
-    # Only numeric fields support SUM / AVG
     if metric not in NUMERIC_FIELDS and agg in ("SUM", "AVG"):
         agg = "COUNT"
 
     expr = FIELD_EXPR.get(metric, "total_amount")
 
-    # ── KPI trend: compare current period vs previous 7 days ──
+    # Trend calculation
     trend_pct  = None
     trend_dir  = None
     if metric in NUMERIC_FIELDS and agg in ("SUM", "AVG", "COUNT"):
@@ -434,11 +508,18 @@ def widget_kpi():
         w7      = f"created_at >= '{today - timedelta(days=7)}'"
         w14     = f"created_at >= '{today - timedelta(days=14)}' AND created_at < '{today - timedelta(days=7)}'"
         extra   = _filter_clauses(cfg)
+        
+        if filter_field and filter_value:
+            w7 += f" AND {filter_field} = '{filter_value}'"
+            w14 += f" AND {filter_field} = '{filter_value}'"
+        
         cur     = mysql.connection.cursor()
         cur.execute(f"SELECT {agg}({expr}) AS v FROM customer_orders WHERE {w7}{extra}")
-        now_val = list(cur.fetchone().values())[0] or 0
+        row = cur.fetchone()
+        now_val = row["v"] if row and row["v"] is not None else 0
         cur.execute(f"SELECT {agg}({expr}) AS v FROM customer_orders WHERE {w14}{extra}")
-        prev_val = list(cur.fetchone().values())[0] or 0
+        row = cur.fetchone()
+        prev_val = row["v"] if row and row["v"] is not None else 0
         cur.close()
         if prev_val and prev_val != 0:
             trend_pct = round(((float(now_val) - float(prev_val)) / float(prev_val)) * 100, 1)
@@ -448,7 +529,7 @@ def widget_kpi():
     cur.execute(f"SELECT {agg}({expr}) AS val FROM customer_orders WHERE {where}")
     row = cur.fetchone()
     cur.close()
-    val = list(row.values())[0] if row else 0
+    val = row["val"] if row and row["val"] is not None else 0
     return _json_resp({"value": val, "trend_pct": trend_pct, "trend_dir": trend_dir})
 
 
@@ -458,7 +539,17 @@ def widget_chart():
     x_field    = cfg.get("xAxis",      "product")
     y_field    = cfg.get("yAxis",      "total_amount")
     date_range = cfg.get("dateRange",  "all")
-    where      = _date_where(date_range) + _filter_clauses(cfg)
+    
+    # Handle cross-filtering
+    filter_field = cfg.get("filter_field")
+    filter_value = cfg.get("filter_value")
+    
+    where = _date_where(date_range)
+    
+    if filter_field and filter_value:
+        where += f" AND {filter_field} = '{filter_value}'"
+    
+    where += _filter_clauses(cfg)
 
     x_expr = CHART_FIELD_EXPR.get(x_field, "product")
     y_expr = CHART_FIELD_EXPR.get(y_field, "total_amount")
@@ -493,7 +584,17 @@ def widget_pie():
     cfg        = request.get_json(force=True)
     field      = cfg.get("field",      "status")
     date_range = cfg.get("dateRange",  "all")
-    where      = _date_where(date_range) + _filter_clauses(cfg)
+    
+    # Handle cross-filtering
+    filter_field = cfg.get("filter_field")
+    filter_value = cfg.get("filter_value")
+    
+    where = _date_where(date_range)
+    
+    if filter_field and filter_value:
+        where += f" AND {filter_field} = '{filter_value}'"
+    
+    where += _filter_clauses(cfg)
 
     expr = CHART_FIELD_EXPR.get(field, "status")
 
@@ -529,9 +630,18 @@ def widget_table():
     page       = max(1, int(cfg.get("page",    1)))
     per_page   = max(1, int(cfg.get("perPage", 10)))
     offset     = (page - 1) * per_page
-    where      = _date_where(date_range) + _filter_clauses(cfg)
+    
+    # Handle cross-filtering
+    filter_field = cfg.get("filter_field")
+    filter_value = cfg.get("filter_value")
+    
+    where = _date_where(date_range)
+    
+    if filter_field and filter_value:
+        where += f" AND {filter_field} = '{filter_value}'"
+    
+    where += _filter_clauses(cfg)
 
-    # Whitelist columns to prevent SQL injection
     SAFE = {
         "id","first_name","last_name","email","phone",
         "street","city","state","postal_code","country",
@@ -547,7 +657,8 @@ def widget_table():
     col_sql = ", ".join(columns)
     cur = mysql.connection.cursor()
     cur.execute(f"SELECT COUNT(*) AS cnt FROM customer_orders WHERE {where}")
-    total = cur.fetchone()["cnt"]
+    row = cur.fetchone()
+    total = row["cnt"] if row else 0
 
     cur.execute(f"""
         SELECT {col_sql}
@@ -566,22 +677,7 @@ def widget_table():
 
 
 # ─────────────────────────────────────────────────────────────
-# Dashboard rename API
-# ─────────────────────────────────────────────────────────────
-
-@app.route("/api/dashboards/<int:did>/rename", methods=["PATCH"])
-def rename_dashboard(did):
-    data = request.get_json(force=True)
-    name = (data.get("name") or "Untitled").strip()[:120]
-    cur  = mysql.connection.cursor()
-    cur.execute("UPDATE dashboard_layout SET name=%s WHERE id=%s", (name, did))
-    mysql.connection.commit()
-    cur.close()
-    return _json_resp({"success": True, "name": name})
-
-
-# ─────────────────────────────────────────────────────────────
-# Commit preview (get layout snapshot without restoring)
+# Commit preview
 # ─────────────────────────────────────────────────────────────
 
 @app.route("/api/history/<int:hid>/preview", methods=["GET"])
@@ -612,6 +708,5 @@ def preview_commit(hid):
     })
 
 
-# ─────────────────────────────────────────────────────────────
 if __name__ == "__main__":
     app.run(debug=Config.DEBUG, port=5000)

@@ -5,7 +5,9 @@ CREATE DATABASE IF NOT EXISTS dashforge_db
 
 USE dashforge_db;
 
--- customer_orders table
+-- --------------------------------------------------
+-- customer_orders
+-- --------------------------------------------------
 CREATE TABLE IF NOT EXISTS customer_orders (
   id            INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   first_name    VARCHAR(100)   NOT NULL,
@@ -26,7 +28,9 @@ CREATE TABLE IF NOT EXISTS customer_orders (
   created_at    DATETIME       NOT NULL DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
--- dashboard_layout table
+-- --------------------------------------------------
+-- dashboard_layout
+-- --------------------------------------------------
 CREATE TABLE IF NOT EXISTS dashboard_layout (
   id         INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   name       VARCHAR(120) NOT NULL DEFAULT 'My Dashboard',
@@ -35,7 +39,9 @@ CREATE TABLE IF NOT EXISTS dashboard_layout (
              ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
--- dashboard_history table
+-- --------------------------------------------------
+-- dashboard_history
+-- --------------------------------------------------
 CREATE TABLE IF NOT EXISTS dashboard_history (
   id            INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   dashboard_id  INT UNSIGNED NOT NULL,
