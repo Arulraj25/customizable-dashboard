@@ -6,10 +6,10 @@ pipeline {
         DOCKER_IMAGE = 'arulraj25/dashforge'
         DOCKER_TAG = "${BUILD_NUMBER}"
         
-        // AWS EC2 configuration
+        // AWS EC2 configuration (your deployment server)
         EC2_PUBLIC_IP = '32.192.50.89'
         EC2_USER = 'ec2-user'
-        SSH_CREDENTIALS_ID = 'aws-ec2-key'
+        SSH_CREDENTIALS_ID = 'aws-ec2-key'  // The SSH key you added in Jenkins
         
         // Application configuration
         APP_PORT = '8000'
@@ -35,7 +35,7 @@ pipeline {
             steps {
                 script {
                     sh """
-                        echo "🐳 Building Docker image..."
+                        echo "🐳 Building Docker image on Jenkins server..."
                         docker build -t ${DOCKER_IMAGE}:${DOCKER_TAG} .
                         docker tag ${DOCKER_IMAGE}:${DOCKER_TAG} ${DOCKER_IMAGE}:latest
                         echo "✅ Docker image built: ${DOCKER_IMAGE}:${DOCKER_TAG}"
@@ -58,7 +58,7 @@ pipeline {
             }
         }
         
-        stage('Deploy to AWS EC2') {
+        stage('Deploy to EC2') {
             steps {
                 sshagent(credentials: [SSH_CREDENTIALS_ID]) {
                     sh """
@@ -66,7 +66,11 @@ pipeline {
                             set -e
                             echo "🚀 Starting deployment on EC2..."
                             
-                            # Clean up old containers
+                            # Pull latest image
+                            echo "📥 Pulling latest Docker image on EC2..."
+                            docker pull ${DOCKER_IMAGE}:latest
+                            
+                            # Stop and remove old containers
                             echo "🧹 Cleaning up old containers..."
                             docker stop dashforge-mysql dashforge-flask dashforge-nginx 2>/dev/null || true
                             docker rm dashforge-mysql dashforge-flask dashforge-nginx 2>/dev/null || true
@@ -137,19 +141,14 @@ pipeline {
                             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
                             
                             -- Insert sample data
-                            INSERT INTO customer_orders (first_name, last_name, email, phone, product, quantity, unit_price, status, created_by)
+                            INSERT IGNORE INTO customer_orders (first_name, last_name, email, phone, product, quantity, unit_price, status, created_by)
                             VALUES 
                                 ("John", "Doe", "john@example.com", "555-0101", "Fiber Internet 300 Mbps", 1, 49.99, "Completed", "Admin"),
                                 ("Jane", "Smith", "jane@example.com", "555-0102", "5G Unlimited Mobile Plan", 2, 29.99, "In progress", "Admin"),
-                                ("Bob", "Johnson", "bob@example.com", "555-0103", "Fiber Internet 1 Gbps", 1, 89.99, "Pending", "Admin")
-                            ON DUPLICATE KEY UPDATE id=id;
+                                ("Bob", "Johnson", "bob@example.com", "555-0103", "Fiber Internet 1 Gbps", 1, 89.99, "Pending", "Admin");
 EOF
                             
                             echo "✅ Database initialized successfully"
-                            
-                            # Pull latest image
-                            echo "📥 Pulling latest Docker image..."
-                            docker pull ${DOCKER_IMAGE}:latest
                             
                             # Start Flask application
                             echo "🐍 Starting Flask application..."
@@ -199,7 +198,6 @@ http {
         location /static/ {
             alias /static/;
             expires 30d;
-            add_header Cache-Control "public, immutable";
         }
         
         location / {
@@ -253,18 +251,13 @@ NGINX_EOF
                             echo "🔍 Running final verification..."
                             
                             # Check all containers are running
-                            echo "📋 Checking container status..."
                             if [ \$(docker ps | grep -c "dashforge") -lt 3 ]; then
                                 echo "❌ Not all containers are running"
                                 docker ps
                                 exit 1
                             fi
                             
-                            # Test API endpoint (if available)
-                            echo "🌐 Testing API endpoint..."
-                            curl -f http://localhost:${APP_PORT} || echo "⚠️ Application not responding yet"
-                            
-                            echo "✅ Deployment verified successfully!"
+                            echo "✅ All containers are running!"
                             
                             # Show access URL
                             echo ""
@@ -288,53 +281,24 @@ NGINX_EOF
             ║                                                          ║
             ║   📱 Application URL: http://${EC2_PUBLIC_IP}:${APP_PORT}  ║
             ║   🔨 Build Number: ${BUILD_NUMBER}                       ║
-            ║   🐳 Docker Image: ${DOCKER_IMAGE}:${DOCKER_TAG}         ║
-            ║                                                          ║
-            ║   📊 Containers Running:                                 ║
-            ║   • MySQL (dashforge-mysql)                              ║
-            ║   • Flask (dashforge-flask)                              ║
-            ║   • Nginx (dashforge-nginx)                              ║
             ║                                                          ║
             ╚══════════════════════════════════════════════════════════╝
             """
         }
         failure {
-            echo "❌ Deployment Failed! Collecting debug information..."
-            
-            // Try to get logs from EC2
+            echo "❌ Deployment Failed! Check logs above."
             sshagent(credentials: [SSH_CREDENTIALS_ID]) {
                 sh """
                     ssh -o StrictHostKeyChecking=no ${EC2_USER}@${EC2_PUBLIC_IP} '
-                        echo "=== Container Status ==="
-                        docker ps -a
-                        
-                        echo ""
-                        echo "=== Flask Logs ==="
-                        docker logs dashforge-flask 2>&1 | tail -30 || echo "Flask container not found"
-                        
-                        echo ""
-                        echo "=== MySQL Logs ==="
-                        docker logs dashforge-mysql 2>&1 | tail -20 || echo "MySQL container not found"
-                        
-                        echo ""
-                        echo "=== Nginx Logs ==="
-                        docker logs dashforge-nginx 2>&1 | tail -20 || echo "Nginx container not found"
-                        
-                        echo ""
-                        echo "=== Disk Space ==="
-                        df -h
+                        echo "=== Container Logs ==="
+                        docker logs dashforge-flask 2>&1 | tail -30 || true
                     ' || true
                 """
             }
         }
         always {
             // Clean up old Docker images on Jenkins server
-            script {
-                sh '''
-                    echo "🧹 Cleaning up old Docker images..."
-                    docker system prune -f || true
-                '''
-            }
+            sh 'docker system prune -f || true'
         }
     }
 }
