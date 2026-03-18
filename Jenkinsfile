@@ -2,19 +2,15 @@ pipeline {
     agent any
     
     environment {
-        // Docker Hub configuration
         DOCKER_IMAGE = 'arulraj25/dashforge'
         DOCKER_TAG = "${BUILD_NUMBER}"
         
-        // AWS EC2 configuration (your deployment server)
         EC2_PUBLIC_IP = '32.192.50.89'
         EC2_USER = 'ec2-user'
-        SSH_CREDENTIALS_ID = 'aws-ec2-key'  // The SSH key you added in Jenkins
+        SSH_CREDENTIALS_ID = 'aws-ec2-key'
         
-        // Application configuration
         APP_PORT = '8000'
         
-        // Database configuration
         MYSQL_ROOT_PASSWORD = 'rootpassword123'
         MYSQL_DATABASE = 'dashforge_db'
         MYSQL_USER = 'dashforge'
@@ -31,44 +27,61 @@ pipeline {
             }
         }
         
-        stage('Build Docker Image') {
+        stage('Transfer Code to EC2') {
             steps {
-                script {
+                sshagent(credentials: [SSH_CREDENTIALS_ID]) {
                     sh """
-                        echo "🐳 Building Docker image on Jenkins server..."
-                        docker build -t ${DOCKER_IMAGE}:${DOCKER_TAG} .
-                        docker tag ${DOCKER_IMAGE}:${DOCKER_TAG} ${DOCKER_IMAGE}:latest
-                        echo "✅ Docker image built: ${DOCKER_IMAGE}:${DOCKER_TAG}"
+                        # Create temp directory on EC2
+                        ssh -o StrictHostKeyChecking=no ${EC2_USER}@${EC2_PUBLIC_IP} 'mkdir -p /tmp/dashforge-build'
+                        
+                        # Copy code to EC2
+                        rsync -avz --exclude '.git' --exclude 'Jenkinsfile' -e "ssh -o StrictHostKeyChecking=no" ./ ${EC2_USER}@${EC2_PUBLIC_IP}:/tmp/dashforge-build/
                     """
                 }
             }
         }
         
-        stage('Push to Docker Hub') {
+        stage('Build Docker Image on EC2') {
+            steps {
+                sshagent(credentials: [SSH_CREDENTIALS_ID]) {
+                    sh """
+                        ssh -o StrictHostKeyChecking=no ${EC2_USER}@${EC2_PUBLIC_IP} '
+                            cd /tmp/dashforge-build
+                            echo "🐳 Building Docker image on EC2..."
+                            docker build -t ${DOCKER_IMAGE}:${DOCKER_TAG} .
+                            docker tag ${DOCKER_IMAGE}:${DOCKER_TAG} ${DOCKER_IMAGE}:latest
+                            echo "✅ Docker image built: ${DOCKER_IMAGE}:${DOCKER_TAG}"
+                        '
+                    """
+                }
+            }
+        }
+        
+        stage('Push to Docker Hub from EC2') {
             steps {
                 withCredentials([string(credentialsId: 'docker-hub-credentials', variable: 'DOCKER_PASS')]) {
-                    sh """
-                        echo "📤 Pushing to Docker Hub..."
-                        echo "${DOCKER_PASS}" | docker login -u arulraj25 --password-stdin
-                        docker push ${DOCKER_IMAGE}:${DOCKER_TAG}
-                        docker push ${DOCKER_IMAGE}:latest
-                        echo "✅ Image pushed to Docker Hub"
-                    """
+                    sshagent(credentials: [SSH_CREDENTIALS_ID]) {
+                        sh """
+                            ssh -o StrictHostKeyChecking=no ${EC2_USER}@${EC2_PUBLIC_IP} '
+                                echo "📤 Pushing to Docker Hub from EC2..."
+                                echo "${DOCKER_PASS}" | docker login -u arulraj25 --password-stdin
+                                docker push ${DOCKER_IMAGE}:${DOCKER_TAG}
+                                docker push ${DOCKER_IMAGE}:latest
+                                echo "✅ Image pushed to Docker Hub"
+                            '
+                        """
+                    }
                 }
             }
         }
         
-        stage('Deploy to EC2') {
+        stage('Deploy Application on EC2') {
             steps {
                 sshagent(credentials: [SSH_CREDENTIALS_ID]) {
                     sh """
                         ssh -o StrictHostKeyChecking=no ${EC2_USER}@${EC2_PUBLIC_IP} '
                             set -e
                             echo "🚀 Starting deployment on EC2..."
-                            
-                            # Pull latest image
-                            echo "📥 Pulling latest Docker image on EC2..."
-                            docker pull ${DOCKER_IMAGE}:latest
                             
                             # Stop and remove old containers
                             echo "🧹 Cleaning up old containers..."
@@ -242,34 +255,6 @@ NGINX_EOF
                 }
             }
         }
-        
-        stage('Verify Deployment') {
-            steps {
-                sshagent(credentials: [SSH_CREDENTIALS_ID]) {
-                    sh """
-                        ssh -o StrictHostKeyChecking=no ${EC2_USER}@${EC2_PUBLIC_IP} '
-                            echo "🔍 Running final verification..."
-                            
-                            # Check all containers are running
-                            if [ \$(docker ps | grep -c "dashforge") -lt 3 ]; then
-                                echo "❌ Not all containers are running"
-                                docker ps
-                                exit 1
-                            fi
-                            
-                            echo "✅ All containers are running!"
-                            
-                            # Show access URL
-                            echo ""
-                            echo "=========================================="
-                            echo "🌍 Application is live at:"
-                            echo "http://${EC2_PUBLIC_IP}:${APP_PORT}"
-                            echo "=========================================="
-                        '
-                    """
-                }
-            }
-        }
     }
     
     post {
@@ -287,18 +272,6 @@ NGINX_EOF
         }
         failure {
             echo "❌ Deployment Failed! Check logs above."
-            sshagent(credentials: [SSH_CREDENTIALS_ID]) {
-                sh """
-                    ssh -o StrictHostKeyChecking=no ${EC2_USER}@${EC2_PUBLIC_IP} '
-                        echo "=== Container Logs ==="
-                        docker logs dashforge-flask 2>&1 | tail -30 || true
-                    ' || true
-                """
-            }
-        }
-        always {
-            // Clean up old Docker images on Jenkins server
-            sh 'docker system prune -f || true'
         }
     }
 }
