@@ -1,157 +1,108 @@
-# DashForge
-### Custom Dashboard Builder with Customer Order Management
+DashForge - Custom Dashboard Builder
 
-A full-stack web application built with **Flask · MySQL · Vanilla JS · Chart.js · Gridstack.js**
+DashForge is a full-stack web application that allows users to create customizable dashboards and manage customer orders. It includes a CI/CD pipeline for automated deployment using Jenkins and Docker.
 
----
+Tech Stack
 
-## Tech Stack
+Backend: Flask (Python)
+Frontend: HTML, CSS, JavaScript
+Database: MySQL
+Charts and UI: Chart.js, Gridstack.js
+Containerization: Docker
+CI/CD: Jenkins
+Cloud: AWS EC2
+Proxy: Nginx
 
-| Layer       | Technology              |
-|-------------|-------------------------|
-| Backend     | Python 3.10+ / Flask    |
-| Database    | MySQL 8.0+              |
-| Charts      | Chart.js 4              |
-| Grid / DnD  | Gridstack.js 10         |
-| Frontend    | HTML5 / CSS3 / Vanilla JS |
-| Fonts       | Syne · Outfit (Google)  |
+Architecture (Simple Flow)
 
----
+GitHub → Jenkins → Docker → AWS EC2
 
-## Quick Setup
+Code is pushed to GitHub
 
-### 1 · Clone / extract the project
+Jenkins builds and deploys
 
-```bash
-cd project/
-```
+Docker containers run on EC2
 
-### 2 · Set up MySQL
+Application is served using Nginx
 
-```bash
-mysql -u root -p < database/schema.sql
-```
+Containers
 
-This creates `dashforge_db`, both tables, and 12 sample orders.
+MySQL for database
 
-### 3 · Create your `.env` file
+Flask application for backend
 
-```bash
+Nginx for reverse proxy
+
+Access
+
+Application: http://32.192.50.89:8000
+
+Key Features
+
+Custom dashboard builder with drag-and-drop
+
+Multiple chart types (Bar, Line, Pie, KPI, etc.)
+
+Customer order management (CRUD)
+
+Filters for date range and data
+
+Save dashboard layouts
+
+Deployment Flow
+
+Push code to GitHub
+
+Jenkins pipeline runs
+
+Code is sent to EC2
+
+Docker image is built
+
+Containers are started
+
+Application goes live
+
+Run Locally
+
+git clone https://github.com/Arulraj25/customizable-dashboard.git
+cd customizable-dashboard
+
 cp .env.example .env
-# Edit .env and fill in your MYSQL_PASSWORD
-```
 
-```env
 MYSQL_HOST=localhost
 MYSQL_USER=root
-MYSQL_PASSWORD=your_password
+MYSQL_PASSWORD=your_password_here # your database password
 MYSQL_DB=dashforge_db
-SECRET_KEY=change-me
+SECRET_KEY=change-me-in-production
 FLASK_DEBUG=true
-```
 
-### 4 · Install Python dependencies
+python3 -m venv venv
 
-```bash
+source venv/bin/activate
+
 pip install -r requirements.txt
-```
 
-**macOS note:** If `mysqlclient` fails:
-```bash
-brew install mysql-client pkg-config
-pip install -r requirements.txt
-```
 
-**Ubuntu/Debian note:**
-```bash
-sudo apt-get install libmysqlclient-dev python3-dev
-pip install -r requirements.txt
-```
+mysql -u root -p < database/schema.sql
 
-### 5 · Run
-
-```bash
 python app.py
-```
+Open in browser: http://localhost:5000
 
-Open **http://localhost:5000**
+Docker (EC2)
+docker ps
+docker logs dashforge-flask
+docker pull arulraj25/dashforge:latest
+Basic Security
 
----
+SSH key-based login
 
-## Pages
+Limited open ports (22, 8000, 8080)
 
-| URL           | Description                           |
-|---------------|---------------------------------------|
-| `/`           | Live dashboard (read-only view)       |
-| `/orders`     | Customer orders CRUD table            |
-| `/configure`  | Drag-and-drop dashboard builder       |
+Docker credentials managed using tokens
 
----
+Author
 
-## Features
+Arulraj
 
-### Orders (`/orders`)
-- Create, edit, delete orders via a polished modal form
-- Auto-calculated `total_amount = quantity × unit_price`
-- Live search and status filter
-- Required field validation with inline error messages
-
-### Dashboard Builder (`/configure`)
-- Drag widgets from the palette panel onto the canvas grid
-- **Widget types:** Bar, Line, Pie, Area, Scatter · Table · KPI
-- Per-widget settings panel with full configuration options
-- Resize and reposition with Gridstack.js (12-col / 8-col / 4-col responsive)
-- **Save Configuration** button persists layout + settings to MySQL
-
-### Dashboard (`/`)
-- Automatically loads your saved widget layout
-- **Date filter:** All Time · Today · Last 7/30/90 Days
-- All data is sourced live from `customer_orders`
-
----
-
-## API Reference
-
-| Method | Endpoint               | Purpose                   |
-|--------|------------------------|---------------------------|
-| GET    | `/api/orders`          | List all orders           |
-| POST   | `/api/orders`          | Create order              |
-| GET    | `/api/orders/<id>`     | Get single order          |
-| PUT    | `/api/orders/<id>`     | Update order              |
-| DELETE | `/api/orders/<id>`     | Delete order              |
-| GET    | `/api/layout`          | Load dashboard layout     |
-| POST   | `/api/layout`          | Save dashboard layout     |
-| POST   | `/api/widget/kpi`      | KPI widget data           |
-| POST   | `/api/widget/chart`    | Chart widget data         |
-| POST   | `/api/widget/pie`      | Pie chart data            |
-| POST   | `/api/widget/table`    | Paginated table data      |
-
----
-
-## Project Structure
-
-```
-project/
-├── app.py                        # Flask routes & API
-├── config.py                     # Configuration from .env
-├── requirements.txt
-├── .env.example                  # Copy to .env and fill in
-│
-├── database/
-│   └── schema.sql                # MySQL schema + seed data
-│
-├── templates/
-│   ├── layout.html               # Base layout (sidebar navigation)
-│   ├── dashboard.html            # Live dashboard view
-│   ├── configure_dashboard.html  # Widget builder
-│   └── orders.html               # Order management
-│
-└── static/
-    ├── css/
-    │   └── style.css             # Dark editorial theme
-    └── js/
-        ├── widgets.js            # Shared widget renderer
-        ├── dashboard.js          # Dashboard view logic
-        ├── configure.js          # Builder: drag-drop + settings
-        └── orders.js             # Orders CRUD
-```
+GitHub: https://github.com/Arulraj25/customizable-dashboard.git
