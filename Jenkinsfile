@@ -2,8 +2,8 @@ pipeline {
     agent any
     
     environment {
-        // Docker Hub configuration - using your credentials
-        DOCKER_IMAGE = 'arulraj25/dashforge'  // Your Docker Hub username
+        // Docker Hub configuration
+        DOCKER_IMAGE = 'arulraj25/dashforge'
         DOCKER_TAG = "${BUILD_NUMBER}"
         
         // Application configuration
@@ -14,18 +14,17 @@ pipeline {
     stages {
         stage('Checkout') {
             steps {
-                // Using your GitHub credentials
+                // CORRECTED: Using your actual repository
                 git branch: 'main',
-                    url: 'https://github.com/Arulraj25/dashforge.git',
+                    url: 'https://github.com/Arulraj25/customizable-dashboard.git',
                     credentialsId: 'github-credentials'
             }
         }
         
         stage('Create Environment File') {
             steps {
-                script {
-                    sh '''
-                        cat > .env << EOF
+                sh '''
+                    cat > .env << EOF
 MYSQL_ROOT_PASSWORD=rootpassword123
 MYSQL_USER=dashforge
 MYSQL_PASSWORD=dashforgepass456
@@ -33,26 +32,22 @@ MYSQL_DB=dashforge_db
 SECRET_KEY=jenkins-${BUILD_NUMBER}-prod-secret
 FLASK_DEBUG=false
 EOF
-                    '''
-                }
+                '''
             }
         }
         
         stage('Build Docker Image') {
             steps {
-                script {
-                    sh "docker build -t ${DOCKER_IMAGE}:${DOCKER_TAG} ."
-                    sh "docker tag ${DOCKER_IMAGE}:${DOCKER_TAG} ${DOCKER_IMAGE}:latest"
-                }
+                sh "docker build -t ${DOCKER_IMAGE}:${DOCKER_TAG} ."
+                sh "docker tag ${DOCKER_IMAGE}:${DOCKER_TAG} ${DOCKER_IMAGE}:latest"
             }
         }
         
         stage('Push to Docker Hub') {
             steps {
-                script {
-                    // Using your Docker Hub credentials
+                withCredentials([string(credentialsId: 'docker-hub-credentials', variable: 'DOCKER_PASS')]) {
                     sh """
-                        echo "${DOCKER_HUB_TOKEN}" | docker login -u arulraj25 --password-stdin
+                        echo "${DOCKER_PASS}" | docker login -u arulraj25 --password-stdin
                         docker push ${DOCKER_IMAGE}:${DOCKER_TAG}
                         docker push ${DOCKER_IMAGE}:latest
                     """
@@ -62,49 +57,48 @@ EOF
         
         stage('Deploy on EC2') {
             steps {
-                script {
-                    sh '''
-                        # Stop and remove old containers
-                        docker stop dashforge-flask dashforge-mysql dashforge-nginx 2>/dev/null || true
-                        docker rm dashforge-flask dashforge-mysql dashforge-nginx 2>/dev/null || true
-                        
-                        # Create network
-                        docker network create dashforge-network 2>/dev/null || true
-                        
-                        # Start MySQL
-                        docker run -d \\
-                            --name dashforge-mysql \\
-                            --network dashforge-network \\
-                            -e MYSQL_ROOT_PASSWORD=rootpassword123 \\
-                            -e MYSQL_DATABASE=dashforge_db \\
-                            -e MYSQL_USER=dashforge \\
-                            -e MYSQL_PASSWORD=dashforgepass456 \\
-                            -v mysql-data:/var/lib/mysql \\
-                            mysql:8.0 \\
-                            --character-set-server=utf8mb4 \\
-                            --collation-server=utf8mb4_unicode_ci
-                        
-                        # Wait for MySQL
-                        sleep 15
-                        
-                        # Initialize database
-                        docker exec -i dashforge-mysql mysql -u root -prootpassword123 dashforge_db < database/schema.sql 2>/dev/null || true
-                        
-                        # Start Flask app
-                        docker run -d \\
-                            --name dashforge-flask \\
-                            --network dashforge-network \\
-                            -e MYSQL_HOST=dashforge-mysql \\
-                            -e MYSQL_USER=dashforge \\
-                            -e MYSQL_PASSWORD=dashforgepass456 \\
-                            -e MYSQL_DB=dashforge_db \\
-                            -e SECRET_KEY=prod-secret-${BUILD_NUMBER} \\
-                            -e FLASK_DEBUG=false \\
-                            -v static-data:/app/static \\
-                            arulraj25/dashforge:latest
-                        
-                        # Create nginx config
-                        cat > /tmp/nginx.conf << 'EOF'
+                sh '''
+                    # Stop and remove old containers
+                    docker stop dashforge-flask dashforge-mysql dashforge-nginx 2>/dev/null || true
+                    docker rm dashforge-flask dashforge-mysql dashforge-nginx 2>/dev/null || true
+                    
+                    # Create network
+                    docker network create dashforge-network 2>/dev/null || true
+                    
+                    # Start MySQL
+                    docker run -d \\
+                        --name dashforge-mysql \\
+                        --network dashforge-network \\
+                        -e MYSQL_ROOT_PASSWORD=rootpassword123 \\
+                        -e MYSQL_DATABASE=dashforge_db \\
+                        -e MYSQL_USER=dashforge \\
+                        -e MYSQL_PASSWORD=dashforgepass456 \\
+                        -v mysql-data:/var/lib/mysql \\
+                        mysql:8.0 \\
+                        --character-set-server=utf8mb4 \\
+                        --collation-server=utf8mb4_unicode_ci
+                    
+                    # Wait for MySQL
+                    sleep 15
+                    
+                    # Initialize database
+                    docker exec -i dashforge-mysql mysql -u root -prootpassword123 dashforge_db < database/schema.sql 2>/dev/null || true
+                    
+                    # Start Flask app
+                    docker run -d \\
+                        --name dashforge-flask \\
+                        --network dashforge-network \\
+                        -e MYSQL_HOST=dashforge-mysql \\
+                        -e MYSQL_USER=dashforge \\
+                        -e MYSQL_PASSWORD=dashforgepass456 \\
+                        -e MYSQL_DB=dashforge_db \\
+                        -e SECRET_KEY=prod-secret-${BUILD_NUMBER} \\
+                        -e FLASK_DEBUG=false \\
+                        -v static-data:/app/static \\
+                        arulraj25/dashforge:latest
+                    
+                    # Create nginx config
+                    cat > /tmp/nginx.conf << 'EOF'
 events {
     worker_connections 1024;
 }
@@ -145,29 +139,26 @@ http {
     }
 }
 EOF
-                        
-                        # Start Nginx
-                        docker run -d \\
-                            --name dashforge-nginx \\
-                            --network dashforge-network \\
-                            -p 8000:80 \\
-                            -v static-data:/static:ro \\
-                            -v /tmp/nginx.conf:/etc/nginx/nginx.conf:ro \\
-                            nginx:1.25-alpine
-                    '''
-                }
+                    
+                    # Start Nginx
+                    docker run -d \\
+                        --name dashforge-nginx \\
+                        --network dashforge-network \\
+                        -p 8000:80 \\
+                        -v static-data:/static:ro \\
+                        -v /tmp/nginx.conf:/etc/nginx/nginx.conf:ro \\
+                        nginx:1.25-alpine
+                '''
             }
         }
         
         stage('Health Check') {
             steps {
-                script {
-                    sleep(10)
-                    sh """
-                        curl -f http://localhost:8000 || exit 1
-                        echo "✅ Application is running!"
-                    """
-                }
+                sleep(10)
+                sh """
+                    curl -f http://localhost:8000 || exit 1
+                    echo "✅ Application is running!"
+                """
             }
         }
     }
@@ -182,7 +173,7 @@ EOF
             sh "docker logs dashforge-flask 2>/dev/null || true"
         }
         always {
-            sh "docker system prune -f"
+            sh "docker system prune -f || true"
         }
     }
 }
