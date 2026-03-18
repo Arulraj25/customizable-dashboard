@@ -5,12 +5,19 @@ DashForge is a full-stack web application that allows users to create customizab
 Tech Stack
 
 Backend: Flask (Python)
+
 Frontend: HTML, CSS, JavaScript
+
 Database: MySQL
+
 Charts and UI: Chart.js, Gridstack.js
+
 Containerization: Docker
+
 CI/CD: Jenkins
+
 Cloud: AWS EC2
+
 Proxy: Nginx
 
 Architecture (Simple Flow)
@@ -36,6 +43,10 @@ Nginx for reverse proxy
 Access
 
 Application: http://32.192.50.89:8000
+
+Youtube Video Link
+
+https://www.youtube.com/watch?v=AX4GiqDjdZA
 
 Key Features
 
@@ -64,29 +75,35 @@ Containers are started
 Application goes live
 
 Run Locally
-
 git clone https://github.com/Arulraj25/customizable-dashboard.git
 cd customizable-dashboard
 
+# Create environment file
 cp .env.example .env
+
+Edit the .env file and update values:
 
 MYSQL_HOST=localhost
 MYSQL_USER=root
-MYSQL_PASSWORD=your_password_here # your database password
+MYSQL_PASSWORD=your_password_here  # your database password
 MYSQL_DB=dashforge_db
 SECRET_KEY=change-me-in-production
 FLASK_DEBUG=true
-
+# Create virtual environment
 python3 -m venv venv
 
+# Activate virtual environment
 source venv/bin/activate
 
+# Install dependencies
 pip install -r requirements.txt
 
-
+# Setup MySQL
 mysql -u root -p < database/schema.sql
 
+# Run application
 python app.py
+
 Open in browser: http://localhost:5000
 
 Docker (EC2)
