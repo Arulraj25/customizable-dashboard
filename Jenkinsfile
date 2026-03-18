@@ -9,7 +9,7 @@ pipeline {
         // AWS EC2 configuration
         EC2_PUBLIC_IP = '32.192.50.89'
         EC2_USER = 'ec2-user'
-        SSH_KEY_ID = 'aws-ec2-key'
+        SSH_CREDENTIALS_ID = 'aws-ec2-key'
         
         // Application configuration
         APP_PORT = '8000'
@@ -19,6 +19,7 @@ pipeline {
         MYSQL_DATABASE = 'dashforge_db'
         MYSQL_USER = 'dashforge'
         MYSQL_PASSWORD = 'dashforgepass456'
+        SECRET_KEY = "jenkins-prod-${BUILD_NUMBER}"
     }
     
     stages {
@@ -34,6 +35,7 @@ pipeline {
             steps {
                 script {
                     sh """
+                        echo "🐳 Building Docker image..."
                         docker build -t ${DOCKER_IMAGE}:${DOCKER_TAG} .
                         docker tag ${DOCKER_IMAGE}:${DOCKER_TAG} ${DOCKER_IMAGE}:latest
                         echo "✅ Docker image built: ${DOCKER_IMAGE}:${DOCKER_TAG}"
@@ -46,6 +48,7 @@ pipeline {
             steps {
                 withCredentials([string(credentialsId: 'docker-hub-credentials', variable: 'DOCKER_PASS')]) {
                     sh """
+                        echo "📤 Pushing to Docker Hub..."
                         echo "${DOCKER_PASS}" | docker login -u arulraj25 --password-stdin
                         docker push ${DOCKER_IMAGE}:${DOCKER_TAG}
                         docker push ${DOCKER_IMAGE}:latest
@@ -57,13 +60,14 @@ pipeline {
         
         stage('Deploy to AWS EC2') {
             steps {
-                sshagent(credentials: [SSH_KEY_ID]) {
+                sshagent(credentials: [SSH_CREDENTIALS_ID]) {
                     sh """
                         ssh -o StrictHostKeyChecking=no ${EC2_USER}@${EC2_PUBLIC_IP} '
                             set -e
                             echo "🚀 Starting deployment on EC2..."
                             
                             # Clean up old containers
+                            echo "🧹 Cleaning up old containers..."
                             docker stop dashforge-mysql dashforge-flask dashforge-nginx 2>/dev/null || true
                             docker rm dashforge-mysql dashforge-flask dashforge-nginx 2>/dev/null || true
                             
@@ -73,7 +77,7 @@ pipeline {
                             docker volume create static-data 2>/dev/null || true
                             
                             # Start MySQL
-                            echo "📦 Starting MySQL..."
+                            echo "📦 Starting MySQL container..."
                             docker run -d \\
                                 --name dashforge-mysql \\
                                 --network dashforge-network \\
@@ -90,7 +94,7 @@ pipeline {
                             sleep 20
                             
                             # Initialize database schema
-                            echo "🗄️ Initializing database..."
+                            echo "🗄️ Initializing database schema..."
                             docker exec -i dashforge-mysql mysql -u root -p${MYSQL_ROOT_PASSWORD} << "EOF"
                             CREATE DATABASE IF NOT EXISTS ${MYSQL_DATABASE};
                             USE ${MYSQL_DATABASE};
@@ -132,6 +136,7 @@ pipeline {
                                 FOREIGN KEY (dashboard_id) REFERENCES dashboard_layout(id) ON DELETE CASCADE
                             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
                             
+                            -- Insert sample data
                             INSERT INTO customer_orders (first_name, last_name, email, phone, product, quantity, unit_price, status, created_by)
                             VALUES 
                                 ("John", "Doe", "john@example.com", "555-0101", "Fiber Internet 300 Mbps", 1, 49.99, "Completed", "Admin"),
@@ -140,7 +145,11 @@ pipeline {
                             ON DUPLICATE KEY UPDATE id=id;
 EOF
                             
-                            echo "✅ Database initialized"
+                            echo "✅ Database initialized successfully"
+                            
+                            # Pull latest image
+                            echo "📥 Pulling latest Docker image..."
+                            docker pull ${DOCKER_IMAGE}:latest
                             
                             # Start Flask application
                             echo "🐍 Starting Flask application..."
@@ -151,10 +160,10 @@ EOF
                                 -e MYSQL_USER=${MYSQL_USER} \\
                                 -e MYSQL_PASSWORD=${MYSQL_PASSWORD} \\
                                 -e MYSQL_DB=${MYSQL_DATABASE} \\
-                                -e SECRET_KEY=prod-secret-${BUILD_NUMBER} \\
+                                -e SECRET_KEY=${SECRET_KEY} \\
                                 -e FLASK_DEBUG=false \\
                                 -v static-data:/app/static \\
-                                ${DOCKER_IMAGE}:${DOCKER_TAG}
+                                ${DOCKER_IMAGE}:latest
                             
                             echo "⏳ Waiting for Flask to start..."
                             sleep 10
@@ -190,6 +199,7 @@ http {
         location /static/ {
             alias /static/;
             expires 30d;
+            add_header Cache-Control "public, immutable";
         }
         
         location / {
@@ -208,7 +218,7 @@ http {
 NGINX_EOF
                             
                             # Start Nginx
-                            echo "🚀 Starting Nginx..."
+                            echo "🚀 Starting Nginx reverse proxy..."
                             docker run -d \\
                                 --name dashforge-nginx \\
                                 --network dashforge-network \\
@@ -226,7 +236,8 @@ NGINX_EOF
                             
                             # Test application
                             echo ""
-                            echo "🔍 Testing application..."
+                            echo "🔍 Testing application health..."
+                            sleep 5
                             curl -f http://localhost:${APP_PORT} && echo "✅ Application is healthy!" || echo "❌ Health check failed"
                         '
                     """
@@ -236,21 +247,31 @@ NGINX_EOF
         
         stage('Verify Deployment') {
             steps {
-                sshagent(credentials: [SSH_KEY_ID]) {
+                sshagent(credentials: [SSH_CREDENTIALS_ID]) {
                     sh """
                         ssh -o StrictHostKeyChecking=no ${EC2_USER}@${EC2_PUBLIC_IP} '
                             echo "🔍 Running final verification..."
                             
                             # Check all containers are running
-                            if [ \$(docker ps -q | wc -l) -lt 3 ]; then
+                            echo "📋 Checking container status..."
+                            if [ \$(docker ps | grep -c "dashforge") -lt 3 ]; then
                                 echo "❌ Not all containers are running"
+                                docker ps
                                 exit 1
                             fi
                             
-                            # Test API endpoint
-                            curl -f http://localhost:${APP_PORT}/api/orders || echo "⚠️ API test skipped"
+                            # Test API endpoint (if available)
+                            echo "🌐 Testing API endpoint..."
+                            curl -f http://localhost:${APP_PORT} || echo "⚠️ Application not responding yet"
                             
                             echo "✅ Deployment verified successfully!"
+                            
+                            # Show access URL
+                            echo ""
+                            echo "=========================================="
+                            echo "🌍 Application is live at:"
+                            echo "http://${EC2_PUBLIC_IP}:${APP_PORT}"
+                            echo "=========================================="
                         '
                     """
                 }
@@ -269,31 +290,50 @@ NGINX_EOF
             ║   🔨 Build Number: ${BUILD_NUMBER}                       ║
             ║   🐳 Docker Image: ${DOCKER_IMAGE}:${DOCKER_TAG}         ║
             ║                                                          ║
+            ║   📊 Containers Running:                                 ║
+            ║   • MySQL (dashforge-mysql)                              ║
+            ║   • Flask (dashforge-flask)                              ║
+            ║   • Nginx (dashforge-nginx)                              ║
+            ║                                                          ║
             ╚══════════════════════════════════════════════════════════╝
             """
         }
         failure {
-            echo "❌ Deployment Failed!"
-            sshagent(credentials: [SSH_KEY_ID]) {
+            echo "❌ Deployment Failed! Collecting debug information..."
+            
+            // Try to get logs from EC2
+            sshagent(credentials: [SSH_CREDENTIALS_ID]) {
                 sh """
                     ssh -o StrictHostKeyChecking=no ${EC2_USER}@${EC2_PUBLIC_IP} '
-                        echo "=== Container Logs ==="
+                        echo "=== Container Status ==="
+                        docker ps -a
+                        
                         echo ""
-                        echo "--- Flask Logs ---"
-                        docker logs dashforge-flask 2>&1 | tail -20 || echo "Flask container not found"
+                        echo "=== Flask Logs ==="
+                        docker logs dashforge-flask 2>&1 | tail -30 || echo "Flask container not found"
+                        
                         echo ""
-                        echo "--- MySQL Logs ---"
+                        echo "=== MySQL Logs ==="
                         docker logs dashforge-mysql 2>&1 | tail -20 || echo "MySQL container not found"
+                        
                         echo ""
-                        echo "--- Nginx Logs ---"
+                        echo "=== Nginx Logs ==="
                         docker logs dashforge-nginx 2>&1 | tail -20 || echo "Nginx container not found"
+                        
+                        echo ""
+                        echo "=== Disk Space ==="
+                        df -h
                     ' || true
                 """
             }
         }
         always {
+            // Clean up old Docker images on Jenkins server
             script {
-                sh 'docker system prune -f || true'
+                sh '''
+                    echo "🧹 Cleaning up old Docker images..."
+                    docker system prune -f || true
+                '''
             }
         }
     }
