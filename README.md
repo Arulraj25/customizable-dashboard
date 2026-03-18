@@ -516,7 +516,7 @@ GitHub: [github.com/Arulraj25/customizable-dashboard](https://github.com/Arulraj
   
   SSH key-based login
   
-  Limited open ports (22, 8000, 8080)
+  Limited open ports (22, 8000 )
   
   Docker credentials managed using tokens
   
